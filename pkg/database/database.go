@@ -30,7 +30,7 @@ func RunMigrations(migrationsDir string) {
 
 // Connection establishes a PostgreSQL connection using the ENV configuration.
 // It sets the global DB variable and ensures it is initialized only once.
-func Connection(env *config.ENV) {
+func Connection(env *config.ENV) *sqlx.DB {
 	once.Do(func() {
 		db, err := sqlx.Connect("postgres", env.DB_URL) // Supabase Postgres URL (with sslmode=require)
 		if err != nil {
@@ -44,4 +44,5 @@ func Connection(env *config.ENV) {
 		log.Println("✅ Database connection established successfully")
 		RunMigrations("./pkg/migration")
 	})
+	return DB
 }
