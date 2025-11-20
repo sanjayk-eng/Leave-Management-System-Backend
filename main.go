@@ -5,28 +5,15 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkd/config"
-	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkd/database"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkg/config"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkg/database"
 )
-
-// Init initializes environment variables, database connection, and runs auto-migrations.
-// Returns the loaded environment configuration.
-func Init() *config.ENV {
-	// Load environment variables from .env or system environment
-	env := config.LoadENV()
-
-	// Connect to PostgreSQL using GORM
-	database.Connection(env)
-
-	// Run AutoMigrate to ensure all tables exist
-	//database.AutoMigration()
-
-	return env
-}
 
 func main() {
 	// Initialize configuration and database
-	env := Init()
+	env := config.LoadENV()
+
+	database.Connection(env)
 
 	// Create a new Gin router
 	r := gin.Default()

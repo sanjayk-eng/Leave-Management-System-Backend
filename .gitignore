@@ -1,0 +1,17 @@
+# Go binaries
+bin/
+*.exe
+
+# Environment files
+.env
+
+# Logs
+*.log
+
+# IDE/editor files
+.vscode/
+.idea/
+.DS_Store
+
+# Test binaries
+*.test
