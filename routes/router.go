@@ -1,12 +1,24 @@
 package routes
 
 import (
+	"time"
+
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/controllers"
 	middleware "github.com/sanjayk-eng/UserMenagmentSystem_Backend/middlewere"
 )
 
 func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
+
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{h.Env.FRONTEND_SERVER},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Authorization", "token"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// ----------------- Auth -----------------
 	auth := r.Group("/api/auth")
@@ -18,21 +30,25 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	employees := r.Group("/api/employee")
 	employees.Use(middleware.AuthMiddleware(h)) // Protect employee routes
 	{
-		employees.GET("", h.GetEmployee)                         // GET get all employee by Admin ,SuperAdmin and HR
-		employees.POST("", h.CreateEmployee)                     // Add Employee by Admin ,SuperAdmin and HR
-		employees.PATCH("/:id/role", h.UpdateEmployeeRole)       // PATCH /api/employees/:id/role
-		employees.PATCH("/:id/manager", h.UpdateEmployeeManager) // PATCH /api/employees/:id/manager
-		employees.GET("/:id/reports", h.GetEmployeeReports)      // GET /api/employees/:id/reports
+		employees.GET("/", h.GetEmployee) // List all employees (SUPER_ADMIN, ADMIN/HR)
+		//employees.GET("/:id", h.GetEmployeeByID)                 // Get employee details (Self/Manager/Admin)
+		employees.POST("/", h.CreateEmployee) // Create employee (SUPER_ADMIN, ADMIN/HR)
+		//employees.PATCH("/:id", h.UpdateEmployeeInfo)            // Update employee info (SUPER_ADMIN, ADMIN/HR)
+		employees.PATCH("/:id/role", h.UpdateEmployeeRole)       // Change employee role (SUPER_ADMIN, ADMIN/HR)
+		employees.PATCH("/:id/manager", h.UpdateEmployeeManager) // Set/change manager (SUPER_ADMIN, ADMIN/HR)
+		employees.GET("/:id/reports", h.GetEmployeeReports)      // Get direct reports (Self/Manager/Admin)
 	}
 
 	// ----------------- Leaves -----------------
 	leaves := r.Group("/api/leaves")
 	leaves.Use(middleware.AuthMiddleware(h))
 	{
-		leaves.POST("/apply", h.ApplyLeave)
-		leaves.GET("/", h.GetAllLeavePolicies)     //show all leave policy
-		leaves.POST("/admin-add", h.AdminAddLeave) // Admin adds leave
-		leaves.POST("/:id/action", h.ActionLeave)  // Approve/Reject leave
+		leaves.POST("/apply", h.ApplyLeave) // Employee applies for leave
+		leaves.POST("/admin-add", h.AdminAddLeave)
+		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy) // Admin/Manager adds leave on behalf of employee
+		leaves.POST("/:id/action", h.ActionLeave)               // Approve/Reject leave
+		leaves.GET("/all", h.GetAllLeaves)
+		//leaves.GET("/:id", h.GetLeaveByID)         // Get leave details
 	}
 
 	// ----------------- Leave Balances -----------------
@@ -48,18 +64,31 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	payroll := r.Group("/api/payroll")
 	payroll.Use(middleware.AuthMiddleware(h))
 	{
-		payroll.POST("/run", h.RunPayroll)                // POST /api/payroll/run
-		payroll.POST("/:id/finalize", h.FinalizePayroll)  // POST /api/payroll/:id/finalize
-		payroll.GET("/payslips/:id/pdf", h.GetPayslipPDF) // GET /api/payslips/:id/pdf
+		// Run payroll for a given month & year
+		payroll.POST("/run", h.RunPayroll)
+		// POST /api/payroll/run
+
+		// Finalize payroll for a specific payroll run ID
+		payroll.POST("/:id/finalize", h.FinalizePayroll)
+		// POST /api/payroll/{id}/finalize
+
+		// Download payslip PDF for a specific employee payslip ID
+		payroll.GET("/payslips/:id/pdf", h.GetPayslipPDF)
+		// GET /api/payroll/payslips/{id}/pdf
 	}
 
 	// ----------------- Settings -----------------
 	settings := r.Group("/api/settings")
-	settings.Use(middleware.AuthMiddleware(h))
+	settings.Use(middleware.AuthMiddleware(h)) // Only admin/superadmin
 	{
-		settings.GET("/company", h.GetCompanySettings)
-		settings.POST("/company", h.UpdateCompanySettings)
-		settings.GET("/permissions", h.GetPermissions)
-		settings.POST("/permissions", h.UpdatePermissions)
+		settings.GET("/", h.GetCompanySettings)    // Get current settings
+		settings.PUT("/", h.UpdateCompanySettings) // Update settings
+	}
+	holidays := r.Group("/api/settings/holidays")
+	holidays.Use(middleware.AuthMiddleware(h))
+	{
+		holidays.POST("/", h.AddHoliday)         // SUPERADMIN adds holiday
+		holidays.GET("/", h.GetHolidays)         // List all holidays
+		holidays.DELETE("/:id", h.DeleteHoliday) // Remove holiday
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkg/config"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkg/database"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/repositories"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/routes"
 )
 
@@ -17,7 +18,9 @@ func main() {
 	env := config.LoadENV()
 	db := database.Connection(env)
 
-	handlerFunc := controllers.NewHandler(env, db)
+	repo := repositories.InitializeRepo(db)
+
+	handlerFunc := controllers.NewHandler(env, repo)
 
 	// Create a new Gin router
 	r := gin.Default()
@@ -27,7 +30,7 @@ func main() {
 	fmt.Printf("Starting server on port %s\n", env.APP_PORT)
 
 	// Start the Gin server
-	if err := r.Run(env.APP_PORT); err != nil {
+	if err := r.Run("0.0.0.0:" + env.APP_PORT); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

@@ -53,7 +53,7 @@ type LeaveInput struct {
 	StartDate    time.Time  `json:"start_date" validate:"required"`
 	EndDate      time.Time  `json:"end_date" validate:"required"`
 	Days         *float64   `json:"days,omitempty"`
-	Status       *string    `json:"status,omitempty"`
+	Status       string     `json:"status,omitempty"`
 	AppliedByID  *uuid.UUID `json:"applied_by,omitempty"`
 	ApprovedByID *uuid.UUID `json:"approved_by,omitempty"`
 }
@@ -68,6 +68,17 @@ type LeaveBalanceInput struct {
 	Used        *float64  `json:"used,omitempty"`
 	Adjusted    *float64  `json:"adjusted,omitempty"`
 	Closing     *float64  `json:"closing,omitempty"`
+}
+
+type LeaveResponse struct {
+	ID           uuid.UUID `json:"id" db:"id"`                    // leave ID
+	Employee     string    `json:"employee" db:"employee"`        // employee full name
+	LeaveType    string    `json:"leave_type" db:"leave_type"`    // leave type name
+	StartDate    time.Time `json:"start_date" db:"start_date"`    // leave start date
+	EndDate      time.Time `json:"end_date" db:"end_date"`        // leave end date
+	Days         int       `json:"days" db:"days"`                // leave days
+	Status       string    `json:"status" db:"status"`            // leave status (Pending/Approved/Rejected)
+	ApplyingDate time.Time `json:"applying_date" db:"applied_at"` // when leave was applied
 }
 
 // ----------------- LEAVE ADJUSTMENT -----------------
@@ -97,6 +108,14 @@ type PayslipInput struct {
 	NetSalary       *float64  `json:"net_salary,omitempty"`
 	PdfPath         *string   `json:"pdf_path,omitempty"`
 }
+type PayrollEmployeeResponse struct {
+	EmployeeName string  `json:"employee_name"`
+	BasicSalary  float64 `json:"basic_salary"`
+	WorkingDays  float64 `json:"working_days"` // float64 expected
+	AbsentDays   float64 `json:"absent_days"`
+	Deductions   float64 `json:"deductions"`
+	NetSalary    float64 `json:"net_salary"`
+}
 
 // -------------------Loing input-----------------------
 type LoginInput struct {
@@ -111,6 +130,16 @@ type AuditInput struct {
 	Entity   *string    `json:"entity,omitempty"`
 	EntityID *uuid.UUID `json:"entity_id,omitempty"`
 	Metadata *string    `json:"metadata,omitempty"` // JSON as string
+}
+
+type Holiday struct {
+	ID        uuid.UUID `json:"id" db:"id"`
+	Name      string    `json:"name" db:"name" binding:"required"`
+	Date      time.Time `json:"date" db:"date" binding:"required"` // Input by user
+	Day       string    `json:"day" db:"day"`                      // Automatically calculated
+	Type      string    `json:"type" db:"type"`                    // Default "HOLIDAY"
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 var Validate *validator.Validate

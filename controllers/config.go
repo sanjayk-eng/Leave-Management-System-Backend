@@ -1,20 +1,20 @@
 package controllers
 
 import (
-	"github.com/jmoiron/sqlx"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/pkg/config"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/repositories"
 )
 
 // HandlerFunc holds dependencies
 type HandlerFunc struct {
-	Env *config.ENV
-	DB  *sqlx.DB
+	Env   *config.ENV
+	Query *repositories.Repository
 }
 
 // NewHandler initializes and returns a HandlerFunc
-func NewHandler(env *config.ENV, db *sqlx.DB) *HandlerFunc {
+func NewHandler(env *config.ENV, query *repositories.Repository) *HandlerFunc {
 	return &HandlerFunc{
-		Env: env,
-		DB:  db,
+		Env:   env,
+		Query: query,
 	}
 }

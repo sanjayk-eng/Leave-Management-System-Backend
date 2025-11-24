@@ -114,6 +114,17 @@ CREATE TABLE IF NOT EXISTS Tbl_Audit (
 );
 
 
+CREATE TABLE IF NOT EXISTS Tbl_Holiday (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,                    
+    date DATE NOT NULL UNIQUE,              
+    day TEXT NOT NULL,                     
+    type TEXT NOT NULL,                     
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
 ALTER TABLE tbl_employee
 ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active';
 ALTER TABLE Tbl_Role

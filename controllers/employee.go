@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"database/sql"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -21,28 +19,17 @@ type UpdateManagerInput struct {
 
 // GetEmployees - GET /api/employees
 func (h *HandlerFunc) GetEmployee(c *gin.Context) {
-	roleValue, exist := c.Get("role")
-	if !exist {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to get role")
+	role, _ := c.Get("role")
+	r := role.(string)
+
+	if r != "SUPERADMIN" && r != "Admin" {
+		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
 		return
 	}
 
-	role := roleValue.(string)
-	if role != "SUPERADMIN" && role != "Admin" {
-		utils.RespondWithError(c, http.StatusUnauthorized, "not permit")
-		return
-	}
-	rows, err := h.DB.Query(`
-        SELECT 
-            e.id, e.full_name, e.email,e.status, r.type as role,
-            e.password, e.manager_id, e.salary, e.joining_date,
-            e.created_at, e.updated_at, e.deleted_at
-        FROM Tbl_Employee e
-        JOIN Tbl_Role r ON e.role_id = r.id
-        ORDER BY e.full_name
-    `)
+	rows, err := h.Query.GetAllEmployees()
 	if err != nil {
-		utils.RespondWithError(c, 500, fmt.Sprintf("failed to fetch employees: %v", err.Error()))
+		utils.RespondWithError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	defer rows.Close()
@@ -51,264 +38,155 @@ func (h *HandlerFunc) GetEmployee(c *gin.Context) {
 
 	for rows.Next() {
 		var emp models.EmployeeInput
-		err := rows.Scan(
-			&emp.ID,
-			&emp.FullName,
-			&emp.Email,
-			&emp.Status,
-			&emp.Role,
-			&emp.Password,
-			&emp.ManagerID,
-			&emp.Salary,
-			&emp.JoiningDate,
-			&emp.CreatedAt,
-			&emp.UpdatedAt,
-			&emp.DeletedAt,
-		)
-		if err != nil {
-			utils.RespondWithError(c, 500, fmt.Sprintf("failed to read employee data: %v", err.Error()))
+		if err := rows.Scan(
+			&emp.ID, &emp.FullName, &emp.Email, &emp.Status,
+			&emp.Role, &emp.Password, &emp.ManagerID,
+			&emp.Salary, &emp.JoiningDate,
+			&emp.CreatedAt, &emp.UpdatedAt, &emp.DeletedAt,
+		); err != nil {
+			utils.RespondWithError(c, 500, err.Error())
 			return
 		}
-
 		employees = append(employees, emp)
 	}
 
 	c.JSON(200, gin.H{
-		"message":   "All employees fetched successfully",
+		"message":   "Employees fetched",
 		"employees": employees,
 	})
 }
-
 func (h *HandlerFunc) GetEmployeeById(c *gin.Context) {
 
 }
 
 func (h *HandlerFunc) CreateEmployee(c *gin.Context) {
-	roleValue, exist := c.Get("role")
-	if !exist {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to get role")
-		return
-	}
-
-	role := roleValue.(string)
+	role := c.GetString("role")
 	if role != "SUPERADMIN" && role != "Admin" {
-		utils.RespondWithError(c, http.StatusUnauthorized, "not permit")
+		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
 		return
 	}
+
 	var input models.EmployeeInput
-
-	// Bind JSON input
 	if err := c.ShouldBindJSON(&input); err != nil {
-		utils.RespondWithError(c, 400, err.Error())
+		utils.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Standard validator check
-	if err := models.Validate.Struct(input); err != nil {
-		utils.RespondWithError(c, 400, err.Error())
-		return
-	}
-
-	// Enforce @zenithive.com email suffix
 	if !strings.HasSuffix(input.Email, "@zenithive.com") {
 		utils.RespondWithError(c, 400, "email must end with @zenithive.com")
 		return
 	}
 
-	// Check if email already exists
-	var existingEmail string
-	err := h.DB.QueryRow(`SELECT email FROM Tbl_Employee WHERE email=$1`, input.Email).Scan(&existingEmail)
-	if err == nil {
+	// EMAIL EXIST CHECK
+	exists, err := h.Query.CheckEmailExists(input.Email)
+	if err != nil {
+		utils.RespondWithError(c, 500, err.Error())
+		return
+	}
+	if exists {
 		utils.RespondWithError(c, 400, "email already exists")
 		return
-	} else if err != sql.ErrNoRows {
-		utils.RespondWithError(c, 500, "database error")
-		return
 	}
 
-	// Hash password
-	hashedPassword, err := utils.HashPassword(input.Password)
+	// GET ROLE ID
+	roleID, err := h.Query.GetRoleID(input.Role)
 	if err != nil {
-		utils.RespondWithError(c, 500, "failed to hash password")
+		utils.RespondWithError(c, 400, "role not found")
 		return
 	}
 
-	// Get role_id from role type
-	var id string
-	err = h.DB.QueryRow(`SELECT id FROM Tbl_Role WHERE type=$1`, input.Role).Scan(&id)
-	if err != nil {
-		utils.RespondWithError(c, 400, fmt.Sprintf("role not found %s", err.Error()))
-		return
-	}
+	// HASH PASSWORD
+	hash, _ := utils.HashPassword(input.Password)
 
-	// Insert into DB
-	_, err = h.DB.Exec(`
-        INSERT INTO Tbl_Employee (full_name, email, role_id, password, salary, joining_date)
-        VALUES ($1, $2, $3, $4, $5, $6)`,
-		input.FullName, input.Email, id, hashedPassword, input.Salary, input.JoiningDate,
+	// INSERT
+	err = h.Query.InsertEmployee(
+		input.FullName, input.Email,
+		roleID, hash,
+		input.Salary, input.JoiningDate,
 	)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to create employee")
 		return
 	}
 
-	// Success response
-	c.JSON(201, gin.H{"message": "employee created successfully"})
+	c.JSON(201, gin.H{"message": "employee created"})
 }
-
-func (s *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
-	// 1. Get current user's role
-	roleValue, exists := c.Get("role")
-	if !exists {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to get role")
-		return
-	}
-	userRole := roleValue.(string)
-
-	// 2. Only SUPERADMIN / ADMIN can update roles
-	if userRole != "SUPERADMIN" && userRole != "ADMIN" {
-		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted to update role")
+func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "SUPERADMIN" && role != "ADMIN" {
+		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
 
-	// 3. Get target employee ID
 	empID := c.Param("id")
-	if empID == "" {
-		utils.RespondWithError(c, http.StatusBadRequest, "employee_id is required")
-		return
-	}
-
-	// 4. Bind input
 	var input UpdateRoleInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		utils.RespondWithError(c, http.StatusBadRequest, "invalid JSON")
-		return
-	}
+	c.ShouldBindJSON(&input)
 
-	// 5. Validate role
-	validRoles := map[string]bool{
-		"SUPERADMIN": true,
-		"ADMIN":      true,
-		"HR":         true,
-		"EMPLOYEE":   true,
-		"MANAGAR":    true,
-	}
-	if !validRoles[input.Role] {
-		utils.RespondWithError(c, http.StatusBadRequest, "invalid role")
-		return
-	}
-
-	// 6. Check if the employee already has this role
-	var currentRole string
-	err := s.DB.QueryRow(`
-        SELECT R.TYPE
-        FROM TBL_EMPLOYEE E
-        JOIN TBL_ROLE R ON E.ROLE_ID = R.ID
-        WHERE E.ID = $1
-    `, empID).Scan(&currentRole)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to fetch current role")
-		return
-	}
-
-	if currentRole == input.Role {
-		// Role is the same, no update needed
-		c.JSON(http.StatusOK, gin.H{
-			"message":     "employee already has this role",
-			"employee_id": empID,
-			"role":        currentRole,
-		})
-		return
-	}
-
-	// 7. Update role
-	query := `
-        UPDATE TBL_EMPLOYEE
-        SET ROLE_ID = (SELECT ID FROM TBL_ROLE WHERE TYPE=$1),
-            UPDATED_AT = NOW()
-        WHERE ID = $2
-        RETURNING ID;
-    `
-	var updatedID string
-	err = s.DB.QueryRow(query, input.Role, empID).Scan(&updatedID)
+	currentRole, err := h.Query.GetEmployeeCurrentRole(empID)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// 8. Success response
-	c.JSON(http.StatusOK, gin.H{
-		"message":     "employee role updated successfully",
+	if currentRole == input.Role {
+		c.JSON(200, gin.H{"message": "already same role"})
+		return
+	}
+
+	updatedID, err := h.Query.UpdateEmployeeRole(empID, input.Role)
+	if err != nil {
+		utils.RespondWithError(c, 500, err.Error())
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message":     "role updated",
 		"employee_id": updatedID,
-		"new_role":    input.Role,
 	})
 }
-func (s *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
-	// 1. Role check (only HR, SUPERADMIN, ADMIN can assign)
-	roleValue, exists := c.Get("role")
-	if !exists {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to get role")
-		return
-	}
-	userRole := roleValue.(string)
-	if userRole != "HR" && userRole != "SUPERADMIN" && userRole != "ADMIN" {
-		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted to assign manager")
+
+func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
+		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
 
-	// 2. Target employee ID
-	empIDParam := c.Param("id")
-	empID, err := uuid.Parse(empIDParam)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusBadRequest, "invalid employee ID")
-		return
-	}
+	empID, _ := uuid.Parse(c.Param("id"))
 
-	// 3. Bind input
 	var input UpdateManagerInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		utils.RespondWithError(c, http.StatusBadRequest, "invalid JSON")
-		return
-	}
+	c.ShouldBindJSON(&input)
+	managerID, _ := uuid.Parse(input.ManagerID)
 
-	managerID, err := uuid.Parse(input.ManagerID)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusBadRequest, "invalid manager ID")
-		return
-	}
-
-	// 4. Prevent assigning self
 	if empID == managerID {
-		utils.RespondWithError(c, http.StatusBadRequest, "employee cannot be their own manager")
+		utils.RespondWithError(c, 400, "cannot assign self")
 		return
 	}
 
-	// 5. Check if manager exists
-	var existsManager bool
-	err = s.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM TBL_EMPLOYEE WHERE ID=$1)", managerID).Scan(&existsManager)
-	if err != nil || !existsManager {
-		utils.RespondWithError(c, http.StatusNotFound, "manager not found")
+	// CHECK MANAGER EXISTS
+	exists, err := h.Query.ManagerExists(managerID)
+	if err != nil || !exists {
+		utils.RespondWithError(c, 404, "manager not found")
 		return
 	}
 
-	// 6. Update manager
-	_, err = s.DB.Exec(`
-        UPDATE TBL_EMPLOYEE
-        SET MANAGER_ID=$1, UPDATED_AT=NOW()
-        WHERE ID=$2
-    `, managerID, empID)
+	// UPDATE MANAGER
+	err = h.Query.UpdateManager(empID, managerID)
 	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to update manager")
+		utils.RespondWithError(c, 500, "failed")
 		return
 	}
 
-	// 7. Response
-	c.JSON(http.StatusOK, gin.H{
-		"message":     "manager updated successfully",
+	c.JSON(200, gin.H{
+		"message":     "manager updated",
 		"employee_id": empID,
 		"manager_id":  managerID,
 	})
 }
+
+// func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
+// 	c.JSON(http.StatusOK, gin.H{"message": "Employee info updated"})
+// }
 
 // GetEmployeeReports - GET /api/employees/:id/reports
 func (s *HandlerFunc) GetEmployeeReports(c *gin.Context) {

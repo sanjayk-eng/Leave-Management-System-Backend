@@ -24,22 +24,13 @@ func (s *HandlerFunc) Login(c *gin.Context) {
 		utils.RespondWithError(c, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-
 	// 2. Fetch employee + role name
-	var emp EmployeeAuthData
-	query := `
-		SELECT 
-			e.id,
-			e.email,
-			e.password,
-			r.type AS role
-		FROM Tbl_Employee e
-		JOIN Tbl_Role r ON e.role_id = r.id
-		WHERE e.email = $1
-		LIMIT 1;
-	`
+	emp, err := s.Query.GetEmployeeByEmail(input.Email)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusUnauthorized, fmt.Sprintf("Login failed — email not found: %v", err.Error()))
+		return
+	}
 
-	err := s.DB.Get(&emp, query, input.Email)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusUnauthorized, fmt.Sprintf("Login failed — email not found: %v", err.Error()))
 		return
