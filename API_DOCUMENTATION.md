@@ -1129,6 +1129,63 @@ All error responses follow this format:
 
 ---
 
+## Email Notifications
+
+The system automatically sends email notifications for the following events:
+
+### 1. Employee Creation
+When a new employee is created, an automated welcome email is sent to the employee containing:
+- Welcome message
+- Login credentials (email and password)
+- Instructions to change password
+- Login URL
+
+**Triggered by**: `POST /api/employee/`
+
+### 2. Leave Application
+When an employee applies for leave, notifications are sent to:
+- Employee's direct manager
+- All users with ADMIN role
+- All users with SUPERADMIN role
+
+**Email contains**:
+- Employee name
+- Leave type
+- Start and end dates
+- Duration (days)
+- Status (Pending Approval)
+
+**Triggered by**: `POST /api/leaves/apply`
+
+### 3. Leave Approval
+When a leave request is approved, a notification is sent to the employee containing:
+- Leave type
+- Start and end dates
+- Duration (days)
+- Approval confirmation
+
+**Triggered by**: `POST /api/leaves/:id/action` with `action: "APPROVE"`
+
+### 4. Leave Rejection
+When a leave request is rejected, a notification is sent to the employee containing:
+- Leave type
+- Start and end dates
+- Duration (days)
+- Rejection notice
+- Instructions to contact manager
+
+**Triggered by**: `POST /api/leaves/:id/action` with `action: "REJECT"`
+
+### Email Service Configuration
+The system uses Google Apps Script for email delivery:
+- **Service URL**: `https://script.google.com/macros/s/AKfycbxsNl0-rGsVKoszXmURHXoFuxjJeKJTRcC_7AdAA61N56ghaMwdto6RmIBdno4Hz0vQDA/exec`
+- **Method**: POST
+- **Content-Type**: application/json
+- **Timeout**: 10 seconds
+- **Async Processing**: All emails are sent asynchronously to avoid blocking API responses
+
+---
+
 ## Business Logic Notes
 
 ### Leave Calculation

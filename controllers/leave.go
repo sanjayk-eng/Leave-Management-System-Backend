@@ -115,13 +115,13 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 	// -------------------------------------------------
 	// 4️ Fetch Manager ID
 	// -------------------------------------------------
-	var managerID uuid.UUID
-	err = tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", employeeID)
-	if err != nil || managerID == uuid.Nil {
-		utils.RespondWithError(c, http.StatusBadRequest, "Manager not assigned")
-		return
-	}
-	input.AppliedByID = &managerID
+	// var managerID uuid.UUID
+	// err = tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", employeeID)
+	// if err != nil || managerID == uuid.Nil {
+	// 	utils.RespondWithError(c, http.StatusBadRequest, "Manager not assigned")
+	// 	return
+	// }
+	// input.AppliedByID = &managerID
 
 	// -------------------------------------------------
 	// 5️ Calculate Leave Days (Skip weekends + holidays)
@@ -222,10 +222,10 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 	var leaveID uuid.UUID
 	err = tx.QueryRow(`
 		INSERT INTO Tbl_Leave 
-		(employee_id, leave_type_id, start_date, end_date, days, status, applied_by)
-		VALUES ($1,$2,$3,$4,$5,'Pending',$6)
+		(employee_id, leave_type_id, start_date, end_date, days, status)
+		VALUES ($1,$2,$3,$4,$5,'Pending')
 		RETURNING id
-	`, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays, managerID).
+	`, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays).
 		Scan(&leaveID)
 
 	if err != nil {
@@ -243,7 +243,59 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 	}
 
 	// -------------------------------------------------
-	// 1️2 Response
+	// 1️2 Send Notifications to Manager, Admin, and SuperAdmin
+	// -------------------------------------------------
+	go func(empID uuid.UUID, leaveTypeID int, startDate, endDate time.Time, days float64) {
+		// Get employee details including manager
+		var empDetails struct {
+			FullName     string     `db:"full_name"`
+			ManagerID    *uuid.UUID `db:"manager_id"`
+			ManagerEmail *string    `db:"manager_email"`
+		}
+		h.Query.DB.Get(&empDetails, `
+			SELECT e.full_name, e.manager_id, m.email as manager_email
+			FROM Tbl_Employee e
+			LEFT JOIN Tbl_Employee m ON e.manager_id = m.id
+			WHERE e.id=$1
+		`, empID)
+
+		// Get leave type name
+		var leaveTypeName string
+		h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leaveTypeID)
+
+		// Get all admin and superadmin emails
+		var adminEmails []string
+		h.Query.DB.Select(&adminEmails, `
+			SELECT e.email FROM Tbl_Employee e
+			JOIN Tbl_Role r ON e.role_id = r.id
+			WHERE r.type IN ('ADMIN', 'SUPERADMIN')
+		`)
+
+		// Combine all recipients
+		recipients := []string{}
+		if empDetails.ManagerEmail != nil && *empDetails.ManagerEmail != "" {
+			recipients = append(recipients, *empDetails.ManagerEmail)
+		}
+		recipients = append(recipients, adminEmails...)
+
+		// Send notification
+		if len(recipients) > 0 {
+			err := utils.SendLeaveApplicationEmail(
+				recipients,
+				empDetails.FullName,
+				leaveTypeName,
+				startDate.Format("2006-01-02"),
+				endDate.Format("2006-01-02"),
+				days,
+			)
+			if err != nil {
+				fmt.Printf("Failed to send leave application notifications: %v\n", err)
+			}
+		}
+	}(employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays)
+
+	// -------------------------------------------------
+	// 1️3 Response
 	// -------------------------------------------------
 	c.JSON(200, gin.H{
 		"message":  "Leave applied successfully",
@@ -383,6 +435,31 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 			return
 		}
 		tx.Commit()
+
+		// Send rejection notification to employee
+		go func() {
+			var empDetails struct {
+				Email    string `db:"email"`
+				FullName string `db:"full_name"`
+			}
+			s.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+
+			var leaveTypeName string
+			s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
+
+			err := utils.SendLeaveRejectionEmail(
+				empDetails.Email,
+				empDetails.FullName,
+				leaveTypeName,
+				leave.StartDate.Format("2006-01-02"),
+				leave.EndDate.Format("2006-01-02"),
+				leave.Days,
+			)
+			if err != nil {
+				fmt.Printf("Failed to send rejection email: %v\n", err)
+			}
+		}()
+
 		c.JSON(200, gin.H{"message": "Leave rejected"})
 		return
 	}
@@ -402,6 +479,31 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 	}
 
 	tx.Commit()
+
+	// Send approval notification to employee
+	go func() {
+		var empDetails struct {
+			Email    string `db:"email"`
+			FullName string `db:"full_name"`
+		}
+		s.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+
+		var leaveTypeName string
+		s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
+
+		err := utils.SendLeaveApprovalEmail(
+			empDetails.Email,
+			empDetails.FullName,
+			leaveTypeName,
+			leave.StartDate.Format("2006-01-02"),
+			leave.EndDate.Format("2006-01-02"),
+			leave.Days,
+		)
+		if err != nil {
+			fmt.Printf("Failed to send approval email: %v\n", err)
+		}
+	}()
+
 	c.JSON(200, gin.H{"message": "Leave approved successfully"})
 }
 

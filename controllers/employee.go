@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -93,6 +94,13 @@ func (h *HandlerFunc) CreateEmployee(c *gin.Context) {
 		return
 	}
 
+	// Send welcome email with credentials (async to not block response)
+	go func() {
+		if err := utils.SendEmployeeCreationEmail(input.Email, input.FullName, input.Password); err != nil {
+			fmt.Printf("Failed to send welcome email to %s: %v\n", input.Email, err)
+		}
+	}()
+
 	c.JSON(201, gin.H{"message": "employee created"})
 }
 func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
@@ -160,7 +168,7 @@ func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
 	}
 
 	// ---------------------------
-	// 8️⃣ Response
+	// 8️ Response
 	// ---------------------------
 	c.JSON(200, gin.H{
 		"message":     "role updated successfully",
@@ -209,14 +217,14 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 		return
 	}
 
-	// 2️⃣ Parse Employee ID
+	// 2️ Parse Employee ID
 	empID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		utils.RespondWithError(c, 400, "invalid employee ID")
 		return
 	}
 
-	// 3️⃣ Parse Manager ID
+	// 3️ Parse Manager ID
 	var input UpdateManagerInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, 400, "invalid input: "+err.Error())
@@ -228,13 +236,13 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 		return
 	}
 
-	// 4️⃣ Self assignment check
+	// 4️ Self assignment check
 	if empID == managerID {
 		utils.RespondWithError(c, 400, "cannot assign employee as their own manager")
 		return
 	}
 
-	// 5️⃣ Check if employee already has a manager
+	// 5️ Check if employee already has a manager
 	var existingManager uuid.UUID
 	err = h.Query.DB.Get(&existingManager, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", empID)
 	if err != nil {
@@ -247,7 +255,7 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 		return
 	}
 
-	// 6️⃣ Validate Manager exists, active and role = MANAGER
+	// 6️ Validate Manager exists, active and role = MANAGER
 	var mgrRole, mgrStatus string
 	err = h.Query.DB.Get(&mgrRole, "SELECT r.type FROM Tbl_Employee e JOIN Tbl_Role r ON e.role_id = r.id WHERE e.id=$1", managerID)
 	if err != nil {
@@ -264,14 +272,14 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 		return
 	}
 
-	// 7️⃣ Update manager
+	// 7️ Update manager
 	err = h.Query.UpdateManager(empID, managerID)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to update manager: "+err.Error())
 		return
 	}
 
-	// 8️⃣ Success response
+	// 8️ Success response
 	c.JSON(200, gin.H{
 		"message":     "manager updated successfully",
 		"employee_id": empID,

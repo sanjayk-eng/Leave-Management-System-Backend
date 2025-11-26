@@ -10,12 +10,11 @@ import (
 
 // ENV holds all application environment variables in a structured way
 type ENV struct {
-	DB_URL          string
-	APP_PORT        string
-	SERACT_KEY      string
-	FRONTEND_SERVER string
-	SMTP_PORT       string
-	SMTP_HOST       string
+	DB_URL            string
+	APP_PORT          string
+	SERACT_KEY        string
+	FRONTEND_SERVER   string
+	GOOGLE_SCRIPT_URL string
 }
 
 var (
@@ -41,14 +40,13 @@ func LoadENV() *ENV {
 
 		// Populate ENV struct with environment variables
 		cfg = &ENV{
-			DB_URL:          os.Getenv("DB_URL"),   // Required: PostgreSQL URL
-			APP_PORT:        os.Getenv("APP_PORT"), // Optional: server port
-			SERACT_KEY:      os.Getenv("SECRATE_KEY"),
-			FRONTEND_SERVER: os.Getenv("F_SERVER"),
-			SMTP_PORT:       os.Getenv("SMTP_PORT"),
-			SMTP_HOST:       os.Getenv("SMTP_HOST"),
+			DB_URL:            os.Getenv("DB_URL"),   // Required: PostgreSQL URL
+			APP_PORT:          os.Getenv("APP_PORT"), // Optional: server port
+			SERACT_KEY:        os.Getenv("SECRATE_KEY"),
+			FRONTEND_SERVER:   os.Getenv("F_SERVER"),
+			GOOGLE_SCRIPT_URL: os.Getenv("GOOGLE_SCRIPT_URL"),
 		}
 	})
-	log.Println("✅ Environment variables loaded successfully")
+	log.Println(" Environment variables loaded successfully")
 	return cfg
 }
