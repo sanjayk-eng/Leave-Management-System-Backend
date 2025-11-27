@@ -198,3 +198,57 @@ Zenithive HR Team
 
 	return SendEmail(employeeEmail, subject, body)
 }
+
+// SendLeaveCancellationEmail sends notification when leave is cancelled
+func SendLeaveCancellationEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64) error {
+	subject := "Leave Request Cancelled"
+	body := fmt.Sprintf(`
+Dear %s,
+
+Your leave request has been cancelled.
+
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Status: CANCELLED
+
+If you did not cancel this leave request, please contact your manager or HR department immediately.
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, leaveType, startDate, endDate, days)
+
+	return SendEmail(employeeEmail, subject, body)
+}
+
+// SendLeaveWithdrawalEmail sends notification when approved leave is withdrawn
+func SendLeaveWithdrawalEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64, withdrawnBy, withdrawnByRole, reason string) error {
+	subject := "Leave Request Withdrawn"
+	
+	reasonText := ""
+	if reason != "" {
+		reasonText = fmt.Sprintf("\nReason: %s", reason)
+	}
+
+	body := fmt.Sprintf(`
+Dear %s,
+
+Your approved leave request has been withdrawn by %s (%s).
+
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Status: WITHDRAWN%s
+
+Your leave balance has been restored. The %.1f days have been credited back to your account.
+
+If you have any questions about this withdrawal, please contact your manager or HR department.
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, withdrawnBy, withdrawnByRole, leaveType, startDate, endDate, days, reasonText, days)
+
+	return SendEmail(employeeEmail, subject, body)
+}

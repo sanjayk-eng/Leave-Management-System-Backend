@@ -848,6 +848,7 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 // Allows employees to cancel their own pending leaves
 func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	// Get user info from middleware
+	fmt.Println("===========")
 	userIDRaw, _ := c.Get("user_id")
 	userID, _ := uuid.Parse(userIDRaw.(string))
 	
@@ -857,6 +858,7 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	// Parse leave ID from URL
 	leaveID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
+		fmt.Println("1")
 		utils.RespondWithError(c, 400, "Invalid leave ID")
 		return
 	}
@@ -864,6 +866,7 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	// Start transaction
 	tx, err := h.Query.DB.Beginx()
 	if err != nil {
+		fmt.Println("2",err.Error())
 		utils.RespondWithError(c, 500, "Failed to start transaction")
 		return
 	}
@@ -873,12 +876,14 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	var leave Leave
 	err = tx.Get(&leave, `SELECT * FROM Tbl_Leave WHERE id=$1 FOR UPDATE`, leaveID)
 	if err != nil {
+		fmt.Println("3",err.Error())
 		utils.RespondWithError(c, 404, "Leave not found")
 		return
 	}
 
 	// Permission check - employees can only cancel their own leaves
 	if role == "EMPLOYEE" && leave.EmployeeID != userID {
+		fmt.Println("2",err.Error())
 		utils.RespondWithError(c, 403, "You can only cancel your own leave applications")
 		return
 	}
@@ -922,84 +927,114 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	})
 }
 
-// WithdrawApprovedLeave - POST /api/leaves/:id/withdraw
-// Allows admins/managers to withdraw an approved leave and restore balance
-func (h *HandlerFunc) WithdrawApprovedLeave(c *gin.Context) {
-	// Get user info from middleware
-	roleRaw, _ := c.Get("role")
-	role := roleRaw.(string)
+// WithdrawLeave - POST /api/leaves/:id/withdraw
+// Allows Admin/Manager to withdraw an approved leave
+func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
+	// 1️⃣ Get current user info
+	role := c.GetString("role")
+	currentUserIDRaw, _ := c.Get("user_id")
+	currentUserID, _ := uuid.Parse(currentUserIDRaw.(string))
 
-	// Only admins and managers can withdraw approved leaves
-	if role == "EMPLOYEE" {
-		utils.RespondWithError(c, 403, "Only admins and managers can withdraw approved leaves")
+	// 2️⃣ Permission check - Only Admin, SUPERADMIN, and Manager can withdraw
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "MANAGER" {
+		utils.RespondWithError(c, 403, "only SUPERADMIN, ADMIN, and MANAGER can withdraw approved leaves")
 		return
 	}
 
-	// Parse leave ID from URL
-	leaveID, err := uuid.Parse(c.Param("id"))
+	// 3️⃣ Parse Leave ID
+	leaveIDStr := c.Param("id")
+	leaveID, err := uuid.Parse(leaveIDStr)
 	if err != nil {
-		utils.RespondWithError(c, 400, "Invalid leave ID")
+		utils.RespondWithError(c, 400, "invalid leave ID")
 		return
 	}
 
-	// Start transaction
+	// 4️⃣ Parse optional reason from request body
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	c.ShouldBindJSON(&input)
+
+	// 5️⃣ Start transaction
 	tx, err := h.Query.DB.Beginx()
 	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to start transaction")
+		utils.RespondWithError(c, 500, "failed to start transaction")
 		return
 	}
 	defer tx.Rollback()
 
-	// Fetch leave details
+	// 6️⃣ Fetch leave details
 	var leave Leave
-	err = tx.Get(&leave, `SELECT * FROM Tbl_Leave WHERE id=$1 FOR UPDATE`, leaveID)
-	if err != nil {
-		utils.RespondWithError(c, 404, "Leave not found")
-		return
-	}
-
-	// Check if leave is approved
-	if leave.Status != "APPROVED" {
-		utils.RespondWithError(c, 400, fmt.Sprintf("Cannot withdraw leave with status: %s. Only approved leaves can be withdrawn", leave.Status))
-		return
-	}
-
-	// Check if leave has already started
-	today := time.Now().Truncate(24 * time.Hour)
-	if leave.StartDate.Before(today) {
-		utils.RespondWithError(c, 400, "Cannot withdraw leave that has already started or passed")
-		return
-	}
-
-	// Update leave status to CANCELLED
-	_, err = tx.Exec(`
-		UPDATE Tbl_Leave 
-		SET status='CANCELLED', updated_at=NOW() 
-		WHERE id=$1
+	err = tx.Get(&leave, `
+		SELECT id, employee_id, leave_type_id, start_date, end_date, days, status, created_at
+		FROM Tbl_Leave 
+		WHERE id=$1 
+		FOR UPDATE
 	`, leaveID)
 	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to withdraw leave: "+err.Error())
+		if err == sql.ErrNoRows {
+			utils.RespondWithError(c, 404, "leave request not found")
+			return
+		}
+		utils.RespondWithError(c, 500, "failed to fetch leave: "+err.Error())
 		return
 	}
 
-	// Restore leave balance
+	// 7️⃣ Manager can only withdraw leaves of their team members
+	if role == "MANAGER" {
+		var managerID uuid.UUID
+		err := tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+		if err != nil {
+			utils.RespondWithError(c, 500, "failed to verify manager relationship")
+			return
+		}
+		if managerID != currentUserID {
+			utils.RespondWithError(c, 403, "managers can only withdraw leaves of their team members")
+			return
+		}
+	}
+
+	// 8️⃣ Check if leave is in APPROVED status
+	if leave.Status != "APPROVED" {
+		utils.RespondWithError(c, 400, fmt.Sprintf("cannot withdraw leave with status: %s. Only approved leaves can be withdrawn", leave.Status))
+		return
+	}
+
+	// 9️⃣ Update leave status to WITHDRAWN and save reason
+	withdrawalReason := input.Reason
+	if withdrawalReason == "" {
+		withdrawalReason = fmt.Sprintf("Withdrawn by %s", role)
+	}
+	
+	_, err = tx.Exec(`
+		UPDATE Tbl_Leave 
+		SET status='WITHDRAWN', reason=$1, updated_at=NOW() 
+		WHERE id=$2
+	`, withdrawalReason, leaveID)
+	if err != nil {
+		utils.RespondWithError(c, 500, "failed to withdraw leave: "+err.Error())
+		return
+	}
+
+	// 🔟 Restore leave balance (reverse the deduction)
 	_, err = tx.Exec(`
 		UPDATE Tbl_Leave_balance 
 		SET used = used - $1, closing = closing + $1, updated_at = NOW()
-		WHERE employee_id=$2 AND leave_type_id=$3
+		WHERE employee_id=$2 AND leave_type_id=$3 AND year = EXTRACT(YEAR FROM CURRENT_DATE)
 	`, leave.Days, leave.EmployeeID, leave.LeaveTypeID)
 	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to restore leave balance: "+err.Error())
+		utils.RespondWithError(c, 500, "failed to restore leave balance: "+err.Error())
 		return
 	}
 
-	// Commit transaction
-	if err = tx.Commit(); err != nil {
-		utils.RespondWithError(c, 500, "Failed to commit transaction")
+	// 1️⃣1️⃣ Commit transaction
+	err = tx.Commit()
+	if err != nil {
+		utils.RespondWithError(c, 500, "failed to commit transaction")
 		return
 	}
 
-	// Send notification to employee
+	// 1️⃣2️⃣ Send notification (async)
 	go func() {
 		var empDetails struct {
 			Email    string `db:"email"`
@@ -1010,29 +1045,33 @@ func (h *HandlerFunc) WithdrawApprovedLeave(c *gin.Context) {
 		var leaveTypeName string
 		h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
 
-		// You can create a new email template for this
-		body := fmt.Sprintf(`
-			<h2>Leave Withdrawn</h2>
-			<p>Dear %s,</p>
-			<p>Your approved leave has been withdrawn by management:</p>
-			<ul>
-				<li><strong>Leave Type:</strong> %s</li>
-				<li><strong>Dates:</strong> %s to %s</li>
-				<li><strong>Days:</strong> %.1f</li>
-			</ul>
-			<p>Your leave balance has been restored.</p>
-			<p>Please contact your manager for more details.</p>
-		`, empDetails.FullName, leaveTypeName, 
-			leave.StartDate.Format("2006-01-02"), 
-			leave.EndDate.Format("2006-01-02"), 
-			leave.Days)
+		var withdrawnByName string
+		h.Query.DB.Get(&withdrawnByName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", currentUserID)
 
-		utils.SendEmail(empDetails.Email, "Leave Withdrawn", body)
+		// Send withdrawal notification
+		err := utils.SendLeaveWithdrawalEmail(
+			empDetails.Email,
+			empDetails.FullName,
+			leaveTypeName,
+			leave.StartDate.Format("2006-01-02"),
+			leave.EndDate.Format("2006-01-02"),
+			leave.Days,
+			withdrawnByName,
+			role,
+			input.Reason,
+		)
+		if err != nil {
+			fmt.Printf("Failed to send withdrawal email: %v\n", err)
+		}
 	}()
 
+	// 1️⃣3️⃣ Response
 	c.JSON(200, gin.H{
-		"message": "Leave withdrawn successfully and balance restored",
-		"leave_id": leaveID,
-		"days_restored": leave.Days,
+		"message":           "leave withdrawn successfully and balance restored",
+		"leave_id":          leaveID,
+		"days_restored":     leave.Days,
+		"withdrawal_by":     currentUserID,
+		"withdrawal_role":   role,
+		"withdrawal_reason": withdrawalReason,
 	})
 }

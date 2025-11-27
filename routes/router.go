@@ -44,16 +44,15 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	// ----------------- Leaves -----------------
 	leaves := r.Group("/api/leaves")
 	leaves.Use(middleware.AuthMiddleware(h))
-	{ // Employee dashboard with filters
+	{
 		leaves.POST("/apply", h.ApplyLeave)                        // Employee applies for leave
 		leaves.POST("/admin-add", h.AdminAddLeave)                 // Admin/Manager adds leave on behalf of employee
 		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy)    // Admin creates leave policy
 		leaves.GET("/Get-All-Leave-Policy", h.GetAllLeavePolicies) // Get all leave policies
 		leaves.POST("/:id/action", h.ActionLeave)                  // Approve/Reject leave
-		leaves.DELETE("/:id/cancel", h.CancelLeave)                // Employee cancels pending leave
-		leaves.POST("/:id/withdraw", h.WithdrawApprovedLeave)      // Admin/Manager withdraws approved leave
+		leaves.DELETE("/:id/cancel", h.CancelLeave)                // Cancel pending leave (Employee/Admin)
+		leaves.POST("/:id/withdraw", h.WithdrawLeave)              // Withdraw approved leave (Admin/Manager)
 		leaves.GET("/all", h.GetAllLeaves)                         // Get all leaves (filtered by role)
-		//leaves.GET("/:id", h.GetLeaveByID)                       // Get leave details
 	}
 
 	// ----------------- Leave Balances -----------------
