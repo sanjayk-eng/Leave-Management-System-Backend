@@ -149,3 +149,28 @@ Zenithive Leave Management System
 
 	return SendEmail(employeeEmail, subject, body)
 }
+
+// SendLeaveAddedByAdminEmail sends notification to employee when admin/manager adds leave on their behalf
+func SendLeaveAddedByAdminEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64, addedBy, addedByRole string) error {
+	subject := fmt.Sprintf("Leave Added to Your Account - %s", leaveType)
+	body := fmt.Sprintf(`
+Dear %s,
+
+A leave has been added to your account by %s (%s).
+
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Status: APPROVED
+
+This leave has been automatically approved and your leave balance has been updated accordingly.
+
+If you have any questions about this leave entry, please contact your manager or HR department.
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, addedBy, addedByRole, leaveType, startDate, endDate, days)
+
+	return SendEmail(employeeEmail, subject, body)
+}

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"database/sql"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,31 +13,34 @@ import (
 // GetLeaveBalances - GET /api/employees/:id/leave-balances
 // GetLeaveBalances - GET /api/employees/:id/leave-balances
 func (s *HandlerFunc) GetLeaveBalances(c *gin.Context) {
+	// 1. Parse employee ID from path
 	employeeIDParam := c.Param("id")
 	employeeID, err := uuid.Parse(employeeIDParam)
 	if err != nil {
-		utils.RespondWithError(c, 400, "Invalid employee ID")
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid employee ID")
 		return
 	}
 
-	// Optional: Role check
+	// 2. Role check (employees can only view their own balances)
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
 	userIDRaw, _ := c.Get("user_id")
 	userID, _ := uuid.Parse(userIDRaw.(string))
 
 	if role == "EMPLOYEE" && userID != employeeID {
-		utils.RespondWithError(c, 403, "Employees can only view their own balances")
+		utils.RespondWithError(c, http.StatusForbidden, "Employees can only view their own balances")
 		return
 	}
 
-	// Fetch leave balances with LEFT JOIN on leave types
-	var balances []struct {
+	// 3. Query leave balances
+	type Balance struct {
 		LeaveType string  `db:"leave_type" json:"leave_type"`
 		Used      float64 `db:"used" json:"used"`
 		Total     float64 `db:"total" json:"total"`
 		Available float64 `db:"available" json:"available"`
 	}
+
+	var balances []Balance
 
 	query := `
 		SELECT 
@@ -50,13 +54,21 @@ func (s *HandlerFunc) GetLeaveBalances(c *gin.Context) {
 		ORDER BY lt.id
 	`
 
-	err = s.Query.DB.Select(&balances, query, employeeID)
+	// 4. Prepare the statement explicitly
+	stmt, err := s.Query.DB.Preparex(query)
 	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to fetch leave balances: "+err.Error())
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to prepare statement: "+err.Error())
+		return
+	}
+	defer stmt.Close()
+
+	if err := stmt.Select(&balances, employeeID); err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch leave balances: "+err.Error())
 		return
 	}
 
-	c.JSON(200, gin.H{
+	// 5. Send response
+	c.JSON(http.StatusOK, gin.H{
 		"employee_id": employeeID,
 		"balances":    balances,
 	})

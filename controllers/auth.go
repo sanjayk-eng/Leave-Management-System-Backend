@@ -66,3 +66,20 @@ func (s *HandlerFunc) Login(c *gin.Context) {
 		},
 	})
 }
+
+func (s *HandlerFunc) Logout(c *gin.Context) {
+	userIDRaw, _ := c.Get("user_id")
+	userRoleRaw, _ := c.Get("role")
+
+	expiredToken, err := utils.GenerateExpiredToken(userIDRaw.(string), userRoleRaw.(string), s.Env.SERACT_KEY)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to generate expired token")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Logged out successfully",
+		"token":   expiredToken,
+	})
+}

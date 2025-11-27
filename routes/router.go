@@ -43,7 +43,7 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	// ----------------- Leaves -----------------
 	leaves := r.Group("/api/leaves")
 	leaves.Use(middleware.AuthMiddleware(h))
-	{
+	{ // Employee dashboard with filters
 		leaves.POST("/apply", h.ApplyLeave) // Employee applies for leave
 		leaves.POST("/admin-add", h.AdminAddLeave)
 		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy)

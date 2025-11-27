@@ -74,3 +74,17 @@ func ValidateToken(tokenString string, jwtKey string) (*CustomClaims, error) {
 
 	return claims, nil
 }
+
+func GenerateExpiredToken(userID string, userRole string, jwtKey string) (string, error) {
+	claims := CustomClaims{
+		UserID:   userID,
+		UserRole: userRole,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Minute)), // already expired
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Minute)),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtKey))
+}

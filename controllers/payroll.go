@@ -44,10 +44,11 @@ func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 	}
 
 	now := time.Now()
-	if input.Year > now.Year() || (input.Year == now.Year() && input.Month > int(now.Month())) {
+	if input.Year > now.Year() || (input.Year == now.Year() && input.Month >=int(now.Month())) {
 		utils.RespondWithError(c, http.StatusBadRequest, "Cannot run payroll for future months")
 		return
 	}
+
 
 	// --- Check if payroll already exists and is finalized ---
 	var existingStatus string
@@ -291,18 +292,22 @@ func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
 	}
 
 	var payslip struct {
-		EmployeeName string  `db:"full_name"`
-		Month        int     `db:"month"`
-		Year         int     `db:"year"`
-		BasicSalary  float64 `db:"basic_salary"`
-		WorkingDays  int     `db:"working_days"`
-		AbsentDays   int     `db:"absent_days"`
-		Deductions   float64 `db:"deduction_amount"`
-		NetSalary    float64 `db:"net_salary"`
+		EmployeeID   uuid.UUID `db:"employee_id"`
+		EmployeeName string    `db:"full_name"`
+		Email        string    `db:"email"`
+		Month        int       `db:"month"`
+		Year         int       `db:"year"`
+		BasicSalary  float64   `db:"basic_salary"`
+		WorkingDays  int       `db:"working_days"`
+		AbsentDays   int       `db:"absent_days"`
+		Deductions   float64   `db:"deduction_amount"`
+		NetSalary    float64   `db:"net_salary"`
 	}
 
 	err = h.Query.DB.Get(&payslip, `
-		SELECT e.full_name, p.basic_salary, p.working_days, p.absent_days, p.deduction_amount, p.net_salary,
+		SELECT e.id as employee_id, e.full_name, e.email, 
+		       p.basic_salary, p.working_days, p.absent_days, 
+		       p.deduction_amount, p.net_salary,
 		       pr.month, pr.year
 		FROM Tbl_Payslip p
 		JOIN Tbl_Employee e ON e.id = p.employee_id
@@ -314,62 +319,193 @@ func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
 		return
 	}
 
-	// Create PDF
+	// Create PDF with improved design
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
+	pdf.SetAutoPageBreak(false, 0)
 
-	// --- Header ---
-	pdf.SetFont("Arial", "B", 22)
-	pdf.SetTextColor(30, 30, 30) // Dark gray
-	pdf.CellFormat(0, 12, fmt.Sprintf("Salary Payslip - %02d/%d", payslip.Month, payslip.Year),
-		"", 1, "C", false, 0, "")
-	pdf.Ln(6)
+	// ========================================
+	// HEADER SECTION - Company Branding
+	// ========================================
+	pdf.SetFillColor(41, 128, 185) // Professional blue
+	pdf.Rect(0, 0, 210, 45, "F")
 
-	// --- Employee Info ---
-	pdf.SetFont("Arial", "B", 16)
-	pdf.Cell(50, 10, "Employee Name:")
-	pdf.SetFont("Arial", "", 16)
-	pdf.Cell(0, 10, payslip.EmployeeName)
-	pdf.Ln(12)
+	pdf.SetTextColor(255, 255, 255) // White text
+	pdf.SetFont("Arial", "B", 26)
+	pdf.SetY(12)
+	pdf.CellFormat(0, 10, "ZENITHIVE", "", 1, "C", false, 0, "")
 
-	// --- Table Header ---
+	pdf.SetFont("Arial", "", 12)
+	pdf.SetY(25)
+	pdf.CellFormat(0, 6, "Payroll Management System", "", 1, "C", false, 0, "")
+
 	pdf.SetFont("Arial", "B", 14)
-	pdf.SetFillColor(200, 200, 200) // Light gray
-	pdf.CellFormat(90, 10, "Earnings / Info", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(90, 10, "Amount (INR)", "1", 1, "C", true, 0, "")
+	pdf.SetY(35)
+	monthNames := []string{"", "January", "February", "March", "April", "May", "June",
+		"July", "August", "September", "October", "November", "December"}
+	pdf.CellFormat(0, 6, fmt.Sprintf("Salary Slip - %s %d", monthNames[payslip.Month], payslip.Year), "", 1, "C", false, 0, "")
 
-	// --- Table Content ---
-	pdf.SetFont("Arial", "", 14)
-	addRow := func(label string, value string) {
-		pdf.CellFormat(90, 10, label, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(90, 10, value, "1", 1, "R", false, 0, "")
-	}
+	// ========================================
+	// EMPLOYEE INFORMATION SECTION
+	// ========================================
+	pdf.SetY(55)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "B", 14)
+	pdf.SetFillColor(236, 240, 241) // Light gray background
+	pdf.CellFormat(0, 10, "  EMPLOYEE INFORMATION", "", 1, "L", true, 0, "")
 
-	addRow("Basic Salary", fmt.Sprintf("%.2f", payslip.BasicSalary))
-	addRow("Working Days", fmt.Sprintf("%d", payslip.WorkingDays))
-	addRow("Absent Days", fmt.Sprintf("%d", payslip.AbsentDays))
-	addRow("Deductions", fmt.Sprintf("-%.2f", payslip.Deductions))
-	addRow("Net Salary", fmt.Sprintf("%.2f", payslip.NetSalary))
+	pdf.SetFont("Arial", "", 11)
+	pdf.Ln(2)
 
-	pdf.Ln(6)
+	// Employee details in two columns
+	leftX := 15.0
+	rightX := 110.0
+	currentY := pdf.GetY()
 
-	// --- Calculation Section ---
+	// Left column
+	pdf.SetXY(leftX, currentY)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.Cell(40, 7, "Employee Name:")
+	pdf.SetFont("Arial", "", 11)
+	pdf.Cell(0, 7, payslip.EmployeeName)
+
+	currentY += 8
+	pdf.SetXY(leftX, currentY)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.Cell(40, 7, "Employee ID:")
+	pdf.SetFont("Arial", "", 11)
+	pdf.Cell(0, 7, payslip.EmployeeID.String()[:8]+"...")
+
+	// Right column
+	currentY = pdf.GetY() - 8
+	pdf.SetXY(rightX, currentY)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.Cell(30, 7, "Email:")
+	pdf.SetFont("Arial", "", 11)
+	pdf.Cell(0, 7, payslip.Email)
+
+	currentY += 8
+	pdf.SetXY(rightX, currentY)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.Cell(30, 7, "Pay Period:")
+	pdf.SetFont("Arial", "", 11)
+	pdf.Cell(0, 7, fmt.Sprintf("%s %d", monthNames[payslip.Month], payslip.Year))
+
+	// ========================================
+	// EARNINGS SECTION
+	// ========================================
+	pdf.SetY(currentY + 15)
+	pdf.SetFont("Arial", "B", 14)
+	pdf.SetFillColor(46, 204, 113) // Green
+	pdf.SetTextColor(255, 255, 255)
+	pdf.CellFormat(0, 10, "  EARNINGS", "", 1, "L", true, 0, "")
+
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.SetFillColor(232, 245, 233) // Light green
+	pdf.CellFormat(130, 9, "  Description", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(50, 9, "Amount (INR)", "1", 1, "C", true, 0, "")
+
+	pdf.SetFont("Arial", "", 11)
+	pdf.CellFormat(130, 9, "  Basic Salary", "1", 0, "L", false, 0, "")
+	pdf.CellFormat(50, 9, fmt.Sprintf("%.2f", payslip.BasicSalary), "1", 1, "R", false, 0, "")
+
+	pdf.SetFont("Arial", "B", 11)
+	pdf.SetFillColor(232, 245, 233)
+	pdf.CellFormat(130, 9, "  GROSS EARNINGS", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(50, 9, fmt.Sprintf("%.2f", payslip.BasicSalary), "1", 1, "R", true, 0, "")
+
+	// ========================================
+	// DEDUCTIONS SECTION
+	// ========================================
+	pdf.Ln(5)
+	pdf.SetFont("Arial", "B", 14)
+	pdf.SetFillColor(231, 76, 60) // Red
+	pdf.SetTextColor(255, 255, 255)
+	pdf.CellFormat(0, 10, "  DEDUCTIONS", "", 1, "L", true, 0, "")
+
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.SetFillColor(255, 235, 238) // Light red
+	pdf.CellFormat(130, 9, "  Description", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(50, 9, "Amount (INR)", "1", 1, "C", true, 0, "")
+
+	pdf.SetFont("Arial", "", 11)
+	pdf.CellFormat(130, 9, fmt.Sprintf("  Leave Deduction (%d absent days)", payslip.AbsentDays), "1", 0, "L", false, 0, "")
+	pdf.CellFormat(50, 9, fmt.Sprintf("%.2f", payslip.Deductions), "1", 1, "R", false, 0, "")
+
+	pdf.SetFont("Arial", "B", 11)
+	pdf.SetFillColor(255, 235, 238)
+	pdf.CellFormat(130, 9, "  TOTAL DEDUCTIONS", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(50, 9, fmt.Sprintf("%.2f", payslip.Deductions), "1", 1, "R", true, 0, "")
+
+	// ========================================
+	// NET SALARY SECTION (Highlighted)
+	// ========================================
+	pdf.Ln(5)
 	pdf.SetFont("Arial", "B", 16)
-	pdf.Cell(0, 10, "Calculation:")
+	pdf.SetFillColor(52, 73, 94) // Dark blue
+	pdf.SetTextColor(255, 255, 255)
+	pdf.CellFormat(130, 12, "  NET SALARY (Take Home)", "1", 0, "L", true, 0, "")
+	pdf.SetFont("Arial", "B", 18)
+	pdf.CellFormat(50, 12, fmt.Sprintf("%.2f", payslip.NetSalary), "1", 1, "R", true, 0, "")
+
+	// ========================================
+	// ATTENDANCE SUMMARY
+	// ========================================
 	pdf.Ln(8)
-	pdf.SetFont("Arial", "", 14)
-	pdf.MultiCell(0, 8, fmt.Sprintf("%.2f - %.2f = %.2f",
-		payslip.BasicSalary, payslip.Deductions, payslip.NetSalary), "", "L", false)
-	pdf.Ln(4)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Arial", "B", 12)
+	pdf.SetFillColor(241, 196, 15) // Yellow/Gold
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(0, 9, "  ATTENDANCE SUMMARY", "", 1, "L", true, 0, "")
 
-	pdf.SetFont("Arial", "B", 14)
-	pdf.Cell(0, 8, "Deduction Formula:")
-	pdf.Ln(6)
-	pdf.SetFont("Arial", "", 14)
-	pdf.MultiCell(0, 8, fmt.Sprintf("Basic Salary / Working Days * Absent Days = %.2f / %d * %d = %.2f",
-		payslip.BasicSalary, payslip.WorkingDays, payslip.AbsentDays, payslip.Deductions), "", "L", false)
+	pdf.SetFont("Arial", "", 10)
+	pdf.SetFillColor(255, 249, 230) // Light yellow
+	pdf.CellFormat(60, 8, "  Total Working Days", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(60, 8, "  Days Present", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(60, 8, "  Days Absent", "1", 1, "L", true, 0, "")
 
-	// --- Save PDF ---
+	pdf.SetFont("Arial", "B", 10)
+	pdf.CellFormat(60, 8, fmt.Sprintf("  %d days", payslip.WorkingDays), "1", 0, "L", false, 0, "")
+	pdf.CellFormat(60, 8, fmt.Sprintf("  %d days", payslip.WorkingDays-payslip.AbsentDays), "1", 0, "L", false, 0, "")
+	pdf.CellFormat(60, 8, fmt.Sprintf("  %d days", payslip.AbsentDays), "1", 1, "L", false, 0, "")
+
+	// ========================================
+	// CALCULATION BREAKDOWN
+	// ========================================
+	pdf.Ln(8)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.SetFillColor(189, 195, 199) // Gray
+	pdf.CellFormat(0, 8, "  CALCULATION BREAKDOWN", "", 1, "L", true, 0, "")
+
+	pdf.SetFont("Arial", "", 10)
+	pdf.Ln(2)
+	pdf.MultiCell(0, 6, fmt.Sprintf(
+		"Per Day Salary = Basic Salary / Working Days = %.2f / %d = %.2f\n"+
+			"Leave Deduction = Per Day Salary x Absent Days = %.2f x %d = %.2f\n"+
+			"Net Salary = Basic Salary - Leave Deduction = %.2f - %.2f = %.2f",
+		payslip.BasicSalary, payslip.WorkingDays, payslip.BasicSalary/float64(payslip.WorkingDays),
+		payslip.BasicSalary/float64(payslip.WorkingDays), payslip.AbsentDays, payslip.Deductions,
+		payslip.BasicSalary, payslip.Deductions, payslip.NetSalary,
+	), "", "L", false)
+
+	// ========================================
+	// FOOTER
+	// ========================================
+	pdf.SetY(270)
+	pdf.SetFont("Arial", "I", 9)
+	pdf.SetTextColor(128, 128, 128)
+	pdf.CellFormat(0, 5, "This is a computer-generated payslip and does not require a signature.", "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 5, fmt.Sprintf("Generated on: %s", time.Now().Format("02-Jan-2006 15:04:05")), "", 1, "C", false, 0, "")
+
+	pdf.SetDrawColor(41, 128, 185)
+	pdf.SetLineWidth(0.5)
+	pdf.Line(15, 285, 195, 285)
+
+	// ========================================
+	// SAVE PDF
+	// ========================================
 	os.MkdirAll("./tmp", os.ModePerm)
 	pdfPath := fmt.Sprintf("./tmp/payslip_%s.pdf", payslipID)
 	err = pdf.OutputFileAndClose(pdfPath)

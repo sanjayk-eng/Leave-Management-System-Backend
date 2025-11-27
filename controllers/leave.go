@@ -24,15 +24,14 @@ type Leave struct {
 	Status       string     `db:"status"`
 	AppliedByID  *uuid.UUID `db:"applied_by"`
 	ApprovedByID *uuid.UUID `db:"approved_by"`
+	Reason       string     `db:"reason"` //  ADD THIS
 	CreatedAt    time.Time  `db:"created_at"`
 	UpdatedAt    time.Time  `db:"updated_at"`
 }
 
 // ApplyLeave - POST /api/leaves/apply
 func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
-	// -------------------------------------------------
-	// 1️ Extract Employee Info from Middleware
-	// -------------------------------------------------
+	// Extract Employee Info from Middleware
 	empIDRaw, ok := c.Get("user_id")
 	if !ok {
 		utils.RespondWithError(c, http.StatusUnauthorized, "Employee ID missing")
@@ -51,15 +50,17 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	role, ok := c.Get("role")
-	if !ok || role.(string) != "EMPLOYEE" {
-		utils.RespondWithError(c, http.StatusForbidden, "Only employees can apply leave")
-		return
-	}
+	//role, ok := c.Get("role")
+	// if !ok  {
+	// 	utils.RespondWithError(c, http.StatusForbidden, "Only employees can apply leave")
+	// 	return
+	// }
+
+	// Validate Employee Status
 	var empStatus string
 	err = h.Query.DB.Get(&empStatus, `
-    SELECT status FROM Tbl_Employee WHERE id=$1
-`, employeeID)
+		SELECT status FROM Tbl_Employee WHERE id=$1
+	`, employeeID)
 
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to verify employee status")
@@ -71,36 +72,34 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	// -------------------------------------------------
-	// 2️ Bind Input JSON
-	// -------------------------------------------------
+	// Bind Input JSON
 	var input models.LeaveInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, "Invalid input: "+err.Error())
 		return
 	}
+
 	input.EmployeeID = employeeID
 
-	// -------------------------------------------------
-	//  Validate Start & End Date
-	// -------------------------------------------------
-	today := time.Now().Truncate(24 * time.Hour)
-
-	// Start date cannot be in the past
-	if input.StartDate.Before(today) {
-		utils.RespondWithError(c, 400, "Start date cannot be earlier than today's date")
+	// Validate reason
+	if input.Reason == "" {
+		utils.RespondWithError(c, 400, "Leave reason is required")
 		return
 	}
 
-	// End date cannot be earlier than start date
+	// Validate Date
+	today := time.Now().Truncate(24 * time.Hour)
+	if input.StartDate.Before(today) {
+		utils.RespondWithError(c, 400, "Start date cannot be earlier than today")
+		return
+	}
+
 	if input.EndDate.Before(input.StartDate) {
 		utils.RespondWithError(c, 400, "End date cannot be earlier than start date")
 		return
 	}
 
-	// -------------------------------------------------
-	// 3️ Start Transaction (IMPORTANT)
-	// -------------------------------------------------
+	// Start Transaction
 	tx, err := h.Query.DB.Beginx()
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to start transaction")
@@ -112,35 +111,19 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		}
 	}()
 
-	// -------------------------------------------------
-	// 4️ Fetch Manager ID
-	// -------------------------------------------------
-	// var managerID uuid.UUID
-	// err = tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", employeeID)
-	// if err != nil || managerID == uuid.Nil {
-	// 	utils.RespondWithError(c, http.StatusBadRequest, "Manager not assigned")
-	// 	return
-	// }
-	// input.AppliedByID = &managerID
-
-	// -------------------------------------------------
-	// 5️ Calculate Leave Days (Skip weekends + holidays)
-	// -------------------------------------------------
+	// Calculate Working Days
 	leaveDays, err := CalculateWorkingDays(tx, input.StartDate, input.EndDate)
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to calculate leave days: "+err.Error())
 		return
 	}
-
 	if leaveDays <= 0 {
 		utils.RespondWithError(c, 400, "Leave days must be greater than 0")
 		return
 	}
 	input.Days = &leaveDays
 
-	// -------------------------------------------------
-	// 6️ Validate Leave Type
-	// -------------------------------------------------
+	// Validate Leave Type
 	var leaveType struct {
 		DefaultEntitlement int `db:"default_entitlement"`
 	}
@@ -157,9 +140,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	// -------------------------------------------------
-	// 7️ Get/Create Leave Balance
-	// -------------------------------------------------
+	// Get/Create Leave Balance
 	var balance float64
 	err = tx.Get(&balance, `
 		SELECT closing 
@@ -168,7 +149,6 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		AND year = EXTRACT(YEAR FROM CURRENT_DATE)
 	`, employeeID, input.LeaveTypeID)
 
-	// If no balance → create initial record
 	if err == sql.ErrNoRows {
 		balance = float64(leaveType.DefaultEntitlement)
 
@@ -186,17 +166,13 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	// -------------------------------------------------
-	// 8️ Check Enough Leaves
-	// -------------------------------------------------
+	// Check Enough Leaves
 	if balance < leaveDays {
 		utils.RespondWithError(c, 400, "Insufficient leave balance")
 		return
 	}
 
-	// -------------------------------------------------
-	// 9️ Check Overlapping Leaves
-	// -------------------------------------------------
+	// Overlapping Leave Check
 	var overlap int
 	err = tx.Get(&overlap, `
 		SELECT COUNT(*) FROM Tbl_Leave
@@ -210,97 +186,45 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		utils.RespondWithError(c, 500, "Failed to check overlapping leave")
 		return
 	}
-
 	if overlap > 0 {
 		utils.RespondWithError(c, 400, "Overlapping leave exists")
 		return
 	}
 
-	// -------------------------------------------------
-	// 10 Insert Leave Request
-	// -------------------------------------------------
+	// INSERT Leave with Reason
 	var leaveID uuid.UUID
 	err = tx.QueryRow(`
 		INSERT INTO Tbl_Leave 
-		(employee_id, leave_type_id, start_date, end_date, days, status)
-		VALUES ($1,$2,$3,$4,$5,'Pending')
+		(employee_id, leave_type_id, start_date, end_date, days, status, reason)
+		VALUES ($1,$2,$3,$4,$5,'Pending',$6)
 		RETURNING id
-	`, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays).
-		Scan(&leaveID)
+	`,
+		employeeID,
+		input.LeaveTypeID,
+		input.StartDate,
+		input.EndDate,
+		leaveDays,
+		input.Reason,
+	).Scan(&leaveID)
 
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to apply leave: "+err.Error())
 		return
 	}
 
-	// -------------------------------------------------
-	// 1️1 Commit ✔
-	// -------------------------------------------------
+	// Commit Transaction
 	err = tx.Commit()
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to commit transaction")
 		return
 	}
 
-	// -------------------------------------------------
-	// 1️2 Send Notifications to Manager, Admin, and SuperAdmin
-	// -------------------------------------------------
-	go func(empID uuid.UUID, leaveTypeID int, startDate, endDate time.Time, days float64) {
-		// Get employee details including manager
-		var empDetails struct {
-			FullName     string     `db:"full_name"`
-			ManagerID    *uuid.UUID `db:"manager_id"`
-			ManagerEmail *string    `db:"manager_email"`
-		}
-		h.Query.DB.Get(&empDetails, `
-			SELECT e.full_name, e.manager_id, m.email as manager_email
-			FROM Tbl_Employee e
-			LEFT JOIN Tbl_Employee m ON e.manager_id = m.id
-			WHERE e.id=$1
-		`, empID)
-
-		// Get leave type name
-		var leaveTypeName string
-		h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leaveTypeID)
-
-		// Get all admin and superadmin emails
-		var adminEmails []string
-		h.Query.DB.Select(&adminEmails, `
-			SELECT e.email FROM Tbl_Employee e
-			JOIN Tbl_Role r ON e.role_id = r.id
-			WHERE r.type IN ('ADMIN', 'SUPERADMIN')
-		`)
-
-		// Combine all recipients
-		recipients := []string{}
-		if empDetails.ManagerEmail != nil && *empDetails.ManagerEmail != "" {
-			recipients = append(recipients, *empDetails.ManagerEmail)
-		}
-		recipients = append(recipients, adminEmails...)
-
-		// Send notification
-		if len(recipients) > 0 {
-			err := utils.SendLeaveApplicationEmail(
-				recipients,
-				empDetails.FullName,
-				leaveTypeName,
-				startDate.Format("2006-01-02"),
-				endDate.Format("2006-01-02"),
-				days,
-			)
-			if err != nil {
-				fmt.Printf("Failed to send leave application notifications: %v\n", err)
-			}
-		}
-	}(employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays)
-
-	// -------------------------------------------------
-	// 1️3 Response
-	// -------------------------------------------------
+	// Response
 	c.JSON(200, gin.H{
 		"message":  "Leave applied successfully",
 		"leave_id": leaveID,
 		"days":     leaveDays,
+		"reason":   input.Reason,
 	})
 }
 
@@ -378,6 +302,7 @@ func (s *HandlerFunc) GetAllLeavePolicies(c *gin.Context) {
 
 // ActionLeave - POST /api/leaves/:id/action
 func (s *HandlerFunc) ActionLeave(c *gin.Context) {
+	fmt.Println("=============== run")
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
 
@@ -390,6 +315,7 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 	approverID, _ := uuid.Parse(approverIDRaw.(string))
 
 	leaveID, err := uuid.Parse(c.Param("id"))
+	fmt.Println(leaveID)
 	if err != nil {
 		utils.RespondWithError(c, 400, "Invalid leave ID")
 		return
@@ -419,7 +345,7 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 	var leave Leave
 	err = tx.Get(&leave, `SELECT * FROM Tbl_Leave WHERE id=$1 FOR UPDATE`, leaveID)
 	if err != nil {
-		utils.RespondWithError(c, 404, "Leave not found")
+		utils.RespondWithError(c, 404, "Leave not found"+err.Error())
 		return
 	}
 
@@ -554,57 +480,52 @@ func CalculateWorkingDays(tx *sqlx.Tx, start, end time.Time) (float64, error) {
 
 	return float64(workingDays), nil
 }
-
 func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
-	// ------------------------------
-	// 1. Get role & user ID
-	// ------------------------------
-	roleRaw, _ := c.Get("role")
-	role := roleRaw.(string)
+	// 1️⃣ Get Role & User ID
+	role := c.GetString("role")
+	userID, _ := uuid.Parse(c.GetString("user_id"))
 
-	userIDRaw, _ := c.Get("user_id")
-	userID, _ := uuid.Parse(userIDRaw.(string))
-
-	// ------------------------------
-	// 2. Base SQL Query
-	// ------------------------------
+	// 2️⃣ Base Query
 	query := `
-        SELECT 
-            l.id,
-            e.full_name AS employee,
-            lt.name AS leave_type,
-            l.start_date,
-            l.end_date,
-            l.days,
-            l.status,
-            l.created_at AS applied_at
-        FROM Tbl_Leave l
-        JOIN Tbl_Employee e ON l.employee_id = e.id
-        JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
-    `
+	SELECT 
+		l.id,
+		e.full_name AS employee,
+		lt.name AS leave_type,
+		l.start_date,
+		l.end_date,
+		l.days,
+		COALESCE(l.reason, '') AS reason,
+		l.status,
+		l.created_at AS applied_at
+	FROM Tbl_Leave l
+	JOIN Tbl_Employee e ON l.employee_id = e.id
+	JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+	`
 
-	var args []any
+	var (
+		conditions []string
+		args       []any
+	)
 
-	// ------------------------------
-	// 3. Role Based Query Filters
-	// ------------------------------
+	// 3️⃣ Role-based conditions
 	if role == "EMPLOYEE" {
-		query += " WHERE l.employee_id = $1"
+		conditions = append(conditions, "l.employee_id = $1")
 		args = append(args, userID)
 	}
 
 	if role == "MANAGER" {
-		query += " WHERE e.manager_id = $1"
+		conditions = append(conditions, "e.manager_id = $1")
 		args = append(args, userID)
 	}
 
-	// ADMIN + SUPERADMIN → No filter (all leaves)
+	// Apply conditions safely
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
 
 	query += " ORDER BY l.created_at DESC"
 
-	// ------------------------------
-	// 4. Run the Query
-	// ------------------------------
+	// 4️⃣ Execute
 	var result []models.LeaveResponse
 	err := h.Query.DB.Select(&result, query, args...)
 	if err != nil {
@@ -612,9 +533,7 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		return
 	}
 
-	// ------------------------------
-	// 5. Return JSON Response
-	// ------------------------------
+	// 5️⃣ Return success
 	c.JSON(200, gin.H{
 		"total": len(result),
 		"data":  result,
@@ -652,7 +571,9 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 	// ------------------------------
 	// 3. Permission check
 	// ------------------------------
-	if userRole != "SUPERADMIN" && !(userRole == "MANAGAR" && settings.AllowManagerAddLeave) {
+	if userRole != "SUPERADMIN" && 
+	   userRole != "ADMIN" && 
+	   !(userRole == "MANAGER" && settings.AllowManagerAddLeave) {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted to add leave")
 		return
 	}
@@ -674,7 +595,7 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 	// ------------------------------
 	// 5. Manager can only add leave for their team (if not self)
 	// ------------------------------
-	if userRole == "MANAGAR" && input.EmployeeID != currentUserID {
+	if userRole == "MANAGER" && input.EmployeeID != currentUserID {
 		var managerID uuid.UUID
 		err := h.Query.DB.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", input.EmployeeID)
 		if err != nil {
@@ -797,7 +718,38 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 	}
 
 	// ------------------------------
-	// 13. Response
+	// 13. Send notification to employee
+	// ------------------------------
+	go func() {
+		var empDetails struct {
+			Email    string `db:"email"`
+			FullName string `db:"full_name"`
+		}
+		h.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", input.EmployeeID)
+
+		var leaveTypeName string
+		h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", input.LeaveTypeID)
+
+		var addedByName string
+		h.Query.DB.Get(&addedByName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", currentUserID)
+
+		err := utils.SendLeaveAddedByAdminEmail(
+			empDetails.Email,
+			empDetails.FullName,
+			leaveTypeName,
+			input.StartDate.Format("2006-01-02"),
+			input.EndDate.Format("2006-01-02"),
+			leaveDays,
+			addedByName,
+			userRole,
+		)
+		if err != nil {
+			fmt.Printf("Failed to send leave added notification: %v\n", err)
+		}
+	}()
+
+	// ------------------------------
+	// 14. Response
 	// ------------------------------
 	c.JSON(http.StatusOK, gin.H{
 		"message":  "Leave added successfully",

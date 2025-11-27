@@ -477,7 +477,129 @@ curl -X POST http://localhost:8080/api/leaves/770e8400-e29b-41d4-a716-4466554400
   }'
 ```
 
-### 5. Get All Leaves
+### 5. Employee Dashboard (NEW)
+**GET** `/api/leaves/dashboard`
+
+Get employee dashboard with leave statistics, balances, and filtered leave history (EMPLOYEE only).
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Query Parameters (All Optional):**
+- `status` - Filter by leave status (Pending, APPROVED, REJECTED)
+- `leave_type` - Filter by leave type name (partial match)
+- `start_date` - Filter leaves starting from this date (YYYY-MM-DD)
+- `end_date` - Filter leaves ending before this date (YYYY-MM-DD)
+- `year` - Filter by year (e.g., 2024)
+
+**Success Response (200):**
+```json
+{
+  "employee_id": "550e8400-e29b-41d4-a716-446655440000",
+  "statistics": {
+    "total_leaves": 8,
+    "pending_leaves": 2,
+    "approved_leaves": 5,
+    "rejected_leaves": 1,
+    "total_days_used": 15.0,
+    "current_year": 2024
+  },
+  "leave_balances": [
+    {
+      "leave_type": "Annual Leave",
+      "used": 10.0,
+      "total": 20,
+      "available": 10.0
+    },
+    {
+      "leave_type": "Sick Leave",
+      "used": 5.0,
+      "total": 10,
+      "available": 5.0
+    }
+  ],
+  "upcoming_leaves": [
+    {
+      "id": "770e8400-e29b-41d4-a716-446655440002",
+      "employee": "John Doe",
+      "leave_type": "Annual Leave",
+      "start_date": "2024-12-15T00:00:00Z",
+      "end_date": "2024-12-20T00:00:00Z",
+      "days": 5,
+      "status": "APPROVED",
+      "applying_date": "2024-11-20T10:00:00Z"
+    }
+  ],
+  "leaves": {
+    "total": 8,
+    "data": [
+      {
+        "id": "770e8400-e29b-41d4-a716-446655440002",
+        "employee": "John Doe",
+        "leave_type": "Annual Leave",
+        "start_date": "2024-12-01T00:00:00Z",
+        "end_date": "2024-12-05T00:00:00Z",
+        "days": 5,
+        "status": "Pending",
+        "applying_date": "2024-11-25T10:00:00Z"
+      }
+    ]
+  },
+  "filters_applied": {
+    "status": "",
+    "leave_type": "",
+    "start_date": "",
+    "end_date": "",
+    "year": ""
+  }
+}
+```
+
+**Error Responses:**
+- **403 Forbidden:** This dashboard is only for employees
+- **500 Internal Server Error:** Failed to fetch data
+
+**cURL Examples:**
+
+Basic dashboard (no filters):
+```bash
+curl -X GET http://localhost:8080/api/leaves/dashboard \
+  -H "Authorization: Bearer <employee_token>"
+```
+
+Filter by status:
+```bash
+curl -X GET "http://localhost:8080/api/leaves/dashboard?status=APPROVED" \
+  -H "Authorization: Bearer <employee_token>"
+```
+
+Filter by leave type:
+```bash
+curl -X GET "http://localhost:8080/api/leaves/dashboard?leave_type=Annual" \
+  -H "Authorization: Bearer <employee_token>"
+```
+
+Filter by date range:
+```bash
+curl -X GET "http://localhost:8080/api/leaves/dashboard?start_date=2024-01-01&end_date=2024-12-31" \
+  -H "Authorization: Bearer <employee_token>"
+```
+
+Filter by year:
+```bash
+curl -X GET "http://localhost:8080/api/leaves/dashboard?year=2024" \
+  -H "Authorization: Bearer <employee_token>"
+```
+
+Multiple filters:
+```bash
+curl -X GET "http://localhost:8080/api/leaves/dashboard?status=APPROVED&year=2024&leave_type=Annual" \
+  -H "Authorization: Bearer <employee_token>"
+```
+
+### 6. Get All Leaves
 **GET** `/api/leaves/all`
 
 Get all leaves based on role:

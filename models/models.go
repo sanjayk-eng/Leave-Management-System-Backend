@@ -53,6 +53,7 @@ type LeaveInput struct {
 	LeaveTypeID  int        `json:"leave_type_id" validate:"required"`
 	StartDate    time.Time  `json:"start_date" validate:"required"`
 	EndDate      time.Time  `json:"end_date" validate:"required"`
+	Reason       string     `json:"reason" validate:"required,min=3"` // NEW FIELD
 	Days         *float64   `json:"days,omitempty"`
 	Status       string     `json:"status,omitempty"`
 	AppliedByID  *uuid.UUID `json:"applied_by,omitempty"`
@@ -69,17 +70,6 @@ type LeaveBalanceInput struct {
 	Used        *float64  `json:"used,omitempty"`
 	Adjusted    *float64  `json:"adjusted,omitempty"`
 	Closing     *float64  `json:"closing,omitempty"`
-}
-
-type LeaveResponse struct {
-	ID           uuid.UUID `json:"id" db:"id"`                    // leave ID
-	Employee     string    `json:"employee" db:"employee"`        // employee full name
-	LeaveType    string    `json:"leave_type" db:"leave_type"`    // leave type name
-	StartDate    time.Time `json:"start_date" db:"start_date"`    // leave start date
-	EndDate      time.Time `json:"end_date" db:"end_date"`        // leave end date
-	Days         int       `json:"days" db:"days"`                // leave days
-	Status       string    `json:"status" db:"status"`            // leave status (Pending/Approved/Rejected)
-	ApplyingDate time.Time `json:"applying_date" db:"applied_at"` // when leave was applied
 }
 
 // ----------------- LEAVE ADJUSTMENT -----------------
@@ -158,6 +148,17 @@ type FullPayslipResponse struct {
 	PDFPath         string    `json:"pdf_path"`
 	CalculationText string    `json:"calculation"`
 	CreatedAt       string    `json:"created_at"`
+}
+type LeaveResponse struct {
+	ID        uuid.UUID `db:"id" json:"id"`
+	Employee  string    `db:"employee" json:"employee"`
+	LeaveType string    `db:"leave_type" json:"leave_type"`
+	StartDate time.Time `db:"start_date" json:"start_date"`
+	EndDate   time.Time `db:"end_date" json:"end_date"`
+	Days      float64   `db:"days" json:"days"`
+	Reason    string    `db:"reason" json:"reason"`
+	Status    string    `db:"status" json:"status"`
+	AppliedAt time.Time `db:"applied_at" json:"applied_at"`
 }
 
 var Validate *validator.Validate
