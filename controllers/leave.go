@@ -1051,9 +1051,9 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 	currentUserIDRaw, _ := c.Get("user_id")
 	currentUserID, _ := uuid.Parse(currentUserIDRaw.(string))
 
-	// 2️⃣ Permission check - Only Admin, SUPERADMIN, and Manager can withdraw
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "MANAGER" {
-		utils.RespondWithError(c, 403, "only SUPERADMIN, ADMIN, and MANAGER can withdraw approved leaves")
+	// 2️⃣ Permission check - Only Admin, SUPERADMIN, HR, and Manager can withdraw
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" && role != "MANAGER" {
+		utils.RespondWithError(c, 403, "only SUPERADMIN, ADMIN, HR, and MANAGER can withdraw approved leaves")
 		return
 	}
 

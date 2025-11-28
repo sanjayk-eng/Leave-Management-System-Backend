@@ -24,7 +24,7 @@ func (h *HandlerFunc) GetEmployee(c *gin.Context) {
 	role, _ := c.Get("role")
 	r := role.(string)
 
-	if r != "SUPERADMIN" && r != "ADMIN" {
+	if r != "SUPERADMIN" && r != "ADMIN" && r != "HR" {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
 		return
 	}
@@ -71,7 +71,7 @@ func (h *HandlerFunc) GetEmployeeById(c *gin.Context) {
 
 func (h *HandlerFunc) CreateEmployee(c *gin.Context) {
 	role := c.GetString("role")
-	if role != "SUPERADMIN" && role != "Admin" {
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
 		return
 	}
@@ -79,6 +79,12 @@ func (h *HandlerFunc) CreateEmployee(c *gin.Context) {
 	var input models.EmployeeInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// HR and ADMIN cannot create SUPERADMIN users
+	if (role == "ADMIN" || role == "HR") && input.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot create SUPERADMIN users")
 		return
 	}
 
@@ -133,7 +139,7 @@ func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
 	// 1️ Check permission
 	// ---------------------------
 	role := c.GetString("role")
-	if role != "SUPERADMIN" && role != "ADMIN" {
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
@@ -163,6 +169,20 @@ func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
 	currentRole, isManager, err := h.Query.GetEmployeeCurrentRoleAndManagerStatus(empID)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to fetch employee role: "+err.Error())
+		return
+	}
+
+	// ---------------------------
+	// 4.5️ HR and ADMIN cannot edit SUPERADMIN
+	// ---------------------------
+	if (role == "ADMIN" || role == "HR") && currentRole == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
+		return
+	}
+
+	// HR and ADMIN cannot promote to SUPERADMIN
+	if (role == "ADMIN" || role == "HR") && input.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot promote users to SUPERADMIN")
 		return
 	}
 
@@ -217,8 +237,21 @@ func (h *HandlerFunc) DeleteEmployeeStatus(c *gin.Context) {
 	role, _ := c.Get("role")
 	r := role.(string)
 
-	if r != "SUPERADMIN" && r != "ADMIN" {
+	if r != "SUPERADMIN" && r != "ADMIN" && r != "HR" {
 		utils.RespondWithError(c, 401, "not permitted")
+		return
+	}
+
+	// Check if target employee is SUPERADMIN
+	targetEmp, err := h.Query.GetEmployeeByID(empID)
+	if err != nil {
+		utils.RespondWithError(c, 404, "employee not found")
+		return
+	}
+
+	// HR and ADMIN cannot deactivate SUPERADMIN
+	if (r == "ADMIN" || r == "HR") && targetEmp.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
 		return
 	}
 
@@ -246,6 +279,19 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 	empID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		utils.RespondWithError(c, 400, "invalid employee ID")
+		return
+	}
+
+	// 2.5️ Check if target employee is SUPERADMIN
+	targetEmp, err := h.Query.GetEmployeeByID(empID)
+	if err != nil {
+		utils.RespondWithError(c, 404, "employee not found")
+		return
+	}
+
+	// HR and ADMIN cannot assign manager to SUPERADMIN
+	if (role == "ADMIN" || role == "HR") && targetEmp.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
 		return
 	}
 
@@ -335,6 +381,12 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		return
 	}
 
+	// 3.5️⃣ HR and ADMIN cannot edit SUPERADMIN
+	if (role == "ADMIN" || role == "HR") && existingEmp.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
+		return
+	}
+
 	// 4️⃣ Bind input JSON
 	var input struct {
 		FullName    *string     `json:"full_name"`
@@ -348,7 +400,7 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 	}
 
 	// 5️⃣ Permission checks
-	isAdmin := role == "SUPERADMIN" || role == "ADMIN"
+	isAdmin := role == "SUPERADMIN" || role == "ADMIN" || role == "HR"
 	isSelf := currentUserID == empID
 
 	// Check if trying to update email, salary, or joining_date
@@ -456,9 +508,15 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 	}
 
 	// 5️ Check if employee exists
-	_, err = h.Query.GetEmployeeByID(empID)
+	existingEmp, err := h.Query.GetEmployeeByID(empID)
 	if err != nil {
 		utils.RespondWithError(c, 404, "employee not found")
+		return
+	}
+
+	// 5.5️ HR and ADMIN cannot change SUPERADMIN password
+	if (role == "ADMIN" || role == "HR") && existingEmp.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
 		return
 	}
 

@@ -30,7 +30,7 @@ type PayrollPreview struct {
 func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
-	if role != "SUPERADMIN" && role != "ADMIN" {
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, 403, "Not authorized to run payroll")
 		return
 	}
