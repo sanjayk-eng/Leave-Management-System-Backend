@@ -139,6 +139,8 @@ func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
 	// 1️ Check permission
 	// ---------------------------
 	role := c.GetString("role")
+	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
+	
 	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
@@ -151,6 +153,14 @@ func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
 	empID, err := uuid.Parse(empIDStr)
 	if err != nil {
 		utils.RespondWithError(c, 400, "invalid employee ID")
+		return
+	}
+
+	// ---------------------------
+	// 2.5️ ADMIN and HR cannot change their own role
+	// ---------------------------
+	if (role == "ADMIN" || role == "HR") && currentUserID == empID {
+		utils.RespondWithError(c, 403, "ADMIN and HR cannot change their own role. Only SUPERADMIN can change roles.")
 		return
 	}
 
@@ -310,6 +320,13 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 	// 4️ Self assignment check
 	if empID == managerID {
 		utils.RespondWithError(c, 400, "cannot assign employee as their own manager")
+		return
+	}
+
+	// 4.5️ Prevent manager from assigning themselves to others
+	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
+	if currentUserID == managerID && role != "SUPERADMIN" {
+		utils.RespondWithError(c, 403, "you cannot assign yourself as a manager to others. Only SUPERADMIN can do this.")
 		return
 	}
 
