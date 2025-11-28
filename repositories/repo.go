@@ -384,12 +384,12 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 }
 
 // ------------------ UPDATE EMPLOYEE INFO ------------------
-func (r *Repository) UpdateEmployeeInfo(empID uuid.UUID, fullName, email string, salary *float64) error {
+func (r *Repository) UpdateEmployeeInfo(empID uuid.UUID, fullName, email string, salary *float64, joiningDate *time.Time) error {
 	_, err := r.DB.Exec(`
         UPDATE Tbl_Employee
-        SET full_name = $1, email = $2, salary = $3, updated_at = NOW()
-        WHERE id = $4
-    `, fullName, email, salary, empID)
+        SET full_name = $1, email = $2, salary = $3, joining_date = $4, updated_at = NOW()
+        WHERE id = $5
+    `, fullName, email, salary, joiningDate, empID)
 	return err
 }
 

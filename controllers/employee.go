@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -336,9 +337,10 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 
 	// 4️⃣ Bind input JSON
 	var input struct {
-		FullName *string  `json:"full_name"`
-		Email    *string  `json:"email"`
-		Salary   *float64 `json:"salary"`
+		FullName    *string     `json:"full_name"`
+		Email       *string     `json:"email"`
+		Salary      *float64    `json:"salary"`
+		JoiningDate *time.Time  `json:"joining_date"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, 400, "invalid input: "+err.Error())
@@ -349,9 +351,9 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 	isAdmin := role == "SUPERADMIN" || role == "ADMIN"
 	isSelf := currentUserID == empID
 
-	// Check if trying to update email or salary
-	if (input.Email != nil || input.Salary != nil) && !isAdmin {
-		utils.RespondWithError(c, 403, "only SUPERADMIN and ADMIN can update email and salary")
+	// Check if trying to update email, salary, or joining_date
+	if (input.Email != nil || input.Salary != nil || input.JoiningDate != nil) && !isAdmin {
+		utils.RespondWithError(c, 403, "only SUPERADMIN and ADMIN can update email, salary, and joining date")
 		return
 	}
 
@@ -397,8 +399,13 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		finalSalary = input.Salary
 	}
 
+	finalJoiningDate := existingEmp.JoiningDate
+	if input.JoiningDate != nil {
+		finalJoiningDate = input.JoiningDate
+	}
+
 	// 8️⃣ Update employee info
-	err = h.Query.UpdateEmployeeInfo(empID, finalName, finalEmail, finalSalary)
+	err = h.Query.UpdateEmployeeInfo(empID, finalName, finalEmail, finalSalary, finalJoiningDate)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to update employee: "+err.Error())
 		return
