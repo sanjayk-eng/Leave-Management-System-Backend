@@ -15,10 +15,16 @@ type EmailRequest struct {
 	Body    string `json:"body"`
 }
 
-var GOOGLE_SCRIPT_URL = os.Getenv("GOOGLE_SCRIPT_URL")
-
 // SendEmail sends an email using Google Apps Script
 func SendEmail(to, subject, body string) error {
+	// Get GOOGLE_SCRIPT_URL from environment at runtime
+	googleScriptURL := os.Getenv("GOOGLE_SCRIPT_URL")
+	
+	// Check if URL is set
+	if googleScriptURL == "" {
+		return fmt.Errorf("GOOGLE_SCRIPT_URL environment variable is not set")
+	}
+
 	emailReq := EmailRequest{
 		To:      to,
 		Subject: subject,
@@ -34,7 +40,7 @@ func SendEmail(to, subject, body string) error {
 		Timeout: 10 * time.Second,
 	}
 
-	resp, err := client.Post(GOOGLE_SCRIPT_URL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := client.Post(googleScriptURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to send email: %v", err)
 	}
@@ -74,7 +80,7 @@ Zenithive HR Team
 }
 
 // SendLeaveApplicationEmail sends notification to manager, admin, and superadmin
-func SendLeaveApplicationEmail(recipients []string, employeeName, leaveType, startDate, endDate string, days float64) error {
+func SendLeaveApplicationEmail(recipients []string, employeeName, leaveType, startDate, endDate string, days float64, reason string) error {
 	subject := fmt.Sprintf("Leave Application - %s", employeeName)
 	body := fmt.Sprintf(`
 Dear Manager/Admin,
@@ -86,13 +92,14 @@ Leave Type: %s
 Start Date: %s
 End Date: %s
 Duration: %.1f days
+Reason: %s
 Status: Pending Approval
 
 Please login to the system to approve or reject this leave request.
 
 Best regards,
 Zenithive Leave Management System
-`, employeeName, leaveType, startDate, endDate, days)
+`, employeeName, leaveType, startDate, endDate, days, reason)
 
 	for _, recipient := range recipients {
 		if err := SendEmail(recipient, subject, body); err != nil {

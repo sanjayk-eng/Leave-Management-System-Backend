@@ -86,14 +86,14 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		utils.RespondWithError(c, 400, "Leave reason is required. Please provide a valid reason for your leave request")
 		return
 	}
-	
+
 	// Trim whitespace and check minimum length
 	input.Reason = strings.TrimSpace(input.Reason)
 	if len(input.Reason) < 10 {
 		utils.RespondWithError(c, 400, "Leave reason must be at least 10 characters long. Please provide a detailed reason")
 		return
 	}
-	
+
 	if len(input.Reason) > 500 {
 		utils.RespondWithError(c, 400, "Leave reason is too long. Maximum 500 characters allowed")
 		return
@@ -192,7 +192,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		EndDate   time.Time `db:"end_date"`
 		Status    string    `db:"status"`
 	}
-	
+
 	err = tx.Select(&overlappingLeaves, `
 		SELECT l.id, lt.name as leave_type, l.start_date, l.end_date, l.status
 		FROM Tbl_Leave l
@@ -207,11 +207,11 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		utils.RespondWithError(c, 500, "Failed to check overlapping leave")
 		return
 	}
-	
+
 	if len(overlappingLeaves) > 0 {
 		// Build detailed error message
 		overlap := overlappingLeaves[0]
-		utils.RespondWithError(c, 400, 
+		utils.RespondWithError(c, 400,
 			fmt.Sprintf("Overlapping leave exists: %s from %s to %s (Status: %s). Please cancel or modify the existing leave first",
 				overlap.LeaveType,
 				overlap.StartDate.Format("2006-01-02"),
@@ -247,6 +247,61 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		utils.RespondWithError(c, 500, "Failed to commit transaction")
 		return
 	}
+
+	// Send notification to manager/admin (async)
+	go func() {
+		// Get employee details
+		var empDetails struct {
+			Email    string `db:"email"`
+			FullName string `db:"full_name"`
+		}
+		h.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", employeeID)
+
+		// Get leave type name
+		var leaveTypeName string
+		h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", input.LeaveTypeID)
+
+		// Get manager and admin emails
+		var recipients []string
+
+		// Get manager email
+		var managerEmail string
+		err := h.Query.DB.Get(&managerEmail, `
+			SELECT e2.email 
+			FROM Tbl_Employee e1
+			JOIN Tbl_Employee e2 ON e1.manager_id = e2.id
+			WHERE e1.id = $1
+		`, employeeID)
+		if err == nil && managerEmail != "" {
+			recipients = append(recipients, managerEmail)
+		}
+
+		// Get all admin and superadmin emails
+		var adminEmails []string
+		h.Query.DB.Select(&adminEmails, `
+			SELECT e.email 
+			FROM Tbl_Employee e
+			JOIN Tbl_Role r ON e.role_id = r.id
+			WHERE r.type IN ('ADMIN', 'SUPERADMIN') AND e.status = 'active'
+		`)
+		recipients = append(recipients, adminEmails...)
+
+		// Send notification to all recipients
+		if len(recipients) > 0 {
+			err := utils.SendLeaveApplicationEmail(
+				recipients,
+				empDetails.FullName,
+				leaveTypeName,
+				input.StartDate.Format("2006-01-02"),
+				input.EndDate.Format("2006-01-02"),
+				leaveDays,
+				input.Reason,
+			)
+			if err != nil {
+				fmt.Printf("Failed to send leave application email: %v\n", err)
+			}
+		}
+	}()
 
 	// Response
 	c.JSON(200, gin.H{
@@ -331,13 +386,23 @@ func (s *HandlerFunc) GetAllLeavePolicies(c *gin.Context) {
 
 // ActionLeave - POST /api/leaves/:id/action
 func (s *HandlerFunc) ActionLeave(c *gin.Context) {
-	fmt.Println("=============== run")
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
 
 	if role == "EMPLOYEE" {
 		utils.RespondWithError(c, 403, "Employees cannot approve leaves")
 		return
+	}
+	if role == "MANAGER" {
+		exists, err := s.Query.ChackManagerPermission()
+		if err != nil {
+			utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get employ permission")
+			return
+		}
+		if exists == false {
+			utils.RespondWithError(c, 403, "MANAGER CANNOT APPROVER TO ALLOW LEAVE")
+			return
+		}
 	}
 
 	approverIDRaw, _ := c.Get("user_id")
@@ -383,37 +448,74 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 		return
 	}
 
+	// 🔒 Prevent self-approval: Manager cannot approve their own leave
+	if leave.EmployeeID == approverID {
+		utils.RespondWithError(c, 403, "You cannot approve your own leave request. Please contact your manager or admin")
+		return
+	}
+
+	// 🔒 Additional check for MANAGER role: Can only approve team members' leaves
+	if role == "MANAGER" {
+		var managerID uuid.UUID
+		err := tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+		if err != nil {
+			utils.RespondWithError(c, 500, "Failed to verify reporting relationship")
+			return
+		}
+		
+		// Check if the leave applicant reports to this manager
+		if managerID != approverID {
+			utils.RespondWithError(c, 403, "You can only approve leaves of employees who report to you")
+			return
+		}
+	}
+
 	if body.Action == "REJECT" {
 		_, err = tx.Exec(`UPDATE Tbl_Leave SET status='REJECTED', approved_by=$2, updated_at=NOW() WHERE id=$1`, leaveID, approverID)
 		if err != nil {
 			utils.RespondWithError(c, 500, "Failed to reject leave: "+err.Error())
 			return
 		}
+		// Fetch data BEFORE committing transaction
+		var empDetails struct {
+			Email    string `db:"email"`
+			FullName string `db:"full_name"`
+		}
+		err = s.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+		if err != nil {
+			fmt.Printf("❌ Failed to fetch employee details: %v\n", err)
+		}
+
+		var leaveTypeName string
+		err = s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
+		if err != nil {
+			fmt.Printf("❌ Failed to fetch leave type: %v\n", err)
+		}
+
 		tx.Commit()
 
-		// Send rejection notification to employee
-		go func() {
-			var empDetails struct {
-				Email    string `db:"email"`
-				FullName string `db:"full_name"`
-			}
-			s.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
-
-			var leaveTypeName string
-			s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
-
-			err := utils.SendLeaveRejectionEmail(
-				empDetails.Email,
-				empDetails.FullName,
-				leaveTypeName,
+		// Send rejection notification to employee (async)
+		if empDetails.Email != "" && leaveTypeName != "" {
+			go func(email, name, leaveType, startDate, endDate string, days float64) {
+				fmt.Printf("📧 Sending rejection email to %s...\n", email)
+				err := utils.SendLeaveRejectionEmail(
+					email,
+					name,
+					leaveType,
+					startDate,
+					endDate,
+					days,
+				)
+				if err != nil {
+					fmt.Printf("❌ Failed to send rejection email: %v\n", err)
+				} else {
+					fmt.Printf("✅ Rejection email sent successfully to %s\n", email)
+				}
+			}(empDetails.Email, empDetails.FullName, leaveTypeName,
 				leave.StartDate.Format("2006-01-02"),
 				leave.EndDate.Format("2006-01-02"),
-				leave.Days,
-			)
-			if err != nil {
-				fmt.Printf("Failed to send rejection email: %v\n", err)
-			}
-		}()
+				leave.Days)
+		}
 
 		c.JSON(200, gin.H{"message": "Leave rejected"})
 		return
@@ -427,7 +529,7 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 		WHERE employee_id=$1 AND leave_type_id=$2 
 		AND year = EXTRACT(YEAR FROM CURRENT_DATE)
 	`, leave.EmployeeID, leave.LeaveTypeID)
-	
+
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to fetch leave balance: "+err.Error())
 		return
@@ -452,31 +554,46 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 		return
 	}
 
+	// Fetch data BEFORE committing transaction
+	var empDetails struct {
+		Email    string `db:"email"`
+		FullName string `db:"full_name"`
+	}
+	err = s.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+	if err != nil {
+		fmt.Printf("❌ Failed to fetch employee details: %v\n", err)
+	}
+
+	var leaveTypeName string
+	err = s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
+	if err != nil {
+		fmt.Printf("❌ Failed to fetch leave type: %v\n", err)
+	}
+
 	tx.Commit()
 
-	// Send approval notification to employee
-	go func() {
-		var empDetails struct {
-			Email    string `db:"email"`
-			FullName string `db:"full_name"`
-		}
-		s.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
-
-		var leaveTypeName string
-		s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
-
-		err := utils.SendLeaveApprovalEmail(
-			empDetails.Email,
-			empDetails.FullName,
-			leaveTypeName,
+	// Send approval notification to employee (async)
+	if empDetails.Email != "" && leaveTypeName != "" {
+		go func(email, name, leaveType, startDate, endDate string, days float64) {
+			fmt.Printf("📧 Sending approval email to %s...\n", email)
+			err := utils.SendLeaveApprovalEmail(
+				email,
+				name,
+				leaveType,
+				startDate,
+				endDate,
+				days,
+			)
+			if err != nil {
+				fmt.Printf("❌ Failed to send approval email: %v\n", err)
+			} else {
+				fmt.Printf("✅ Approval email sent successfully to %s\n", email)
+			}
+		}(empDetails.Email, empDetails.FullName, leaveTypeName,
 			leave.StartDate.Format("2006-01-02"),
 			leave.EndDate.Format("2006-01-02"),
-			leave.Days,
-		)
-		if err != nil {
-			fmt.Printf("Failed to send approval email: %v\n", err)
-		}
-	}()
+			leave.Days)
+	}
 
 	c.JSON(200, gin.H{"message": "Leave approved successfully"})
 }
@@ -574,7 +691,8 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 	}
 
 	if role == "MANAGER" {
-		conditions = append(conditions, "e.manager_id = $1")
+		// Manager can see: their own leaves + their team members' leaves
+		conditions = append(conditions, "(e.manager_id = $1 OR l.employee_id = $1)")
 		args = append(args, userID)
 	}
 
@@ -631,9 +749,9 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 	// ------------------------------
 	// 3. Permission check
 	// ------------------------------
-	if userRole != "SUPERADMIN" && 
-	   userRole != "ADMIN" && 
-	   !(userRole == "MANAGER" && settings.AllowManagerAddLeave) {
+	if userRole != "SUPERADMIN" &&
+		userRole != "ADMIN" &&
+		!(userRole == "MANAGER" && settings.AllowManagerAddLeave) {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted to add leave")
 		return
 	}
@@ -657,13 +775,13 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 		utils.RespondWithError(c, http.StatusBadRequest, "Leave reason is required. Please provide a valid reason for this leave")
 		return
 	}
-	
+
 	input.Reason = strings.TrimSpace(input.Reason)
 	if len(input.Reason) < 10 {
 		utils.RespondWithError(c, http.StatusBadRequest, "Leave reason must be at least 10 characters long. Please provide a detailed reason")
 		return
 	}
-	
+
 	if len(input.Reason) > 500 {
 		utils.RespondWithError(c, http.StatusBadRequest, "Leave reason is too long. Maximum 500 characters allowed")
 		return
@@ -843,15 +961,13 @@ func (h *HandlerFunc) AdminAddLeave(c *gin.Context) {
 	})
 }
 
-
 // CancelLeave - DELETE /api/leaves/:id/cancel
 // Allows employees to cancel their own pending leaves
 func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	// Get user info from middleware
-	fmt.Println("===========")
 	userIDRaw, _ := c.Get("user_id")
 	userID, _ := uuid.Parse(userIDRaw.(string))
-	
+
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
 
@@ -866,7 +982,7 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	// Start transaction
 	tx, err := h.Query.DB.Beginx()
 	if err != nil {
-		fmt.Println("2",err.Error())
+		fmt.Println("2", err.Error())
 		utils.RespondWithError(c, 500, "Failed to start transaction")
 		return
 	}
@@ -876,14 +992,14 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	var leave Leave
 	err = tx.Get(&leave, `SELECT * FROM Tbl_Leave WHERE id=$1 FOR UPDATE`, leaveID)
 	if err != nil {
-		fmt.Println("3",err.Error())
+		fmt.Println("3", err.Error())
 		utils.RespondWithError(c, 404, "Leave not found")
 		return
 	}
 
 	// Permission check - employees can only cancel their own leaves
 	if role == "EMPLOYEE" && leave.EmployeeID != userID {
-		fmt.Println("2",err.Error())
+		fmt.Println("2", err.Error())
 		utils.RespondWithError(c, 403, "You can only cancel your own leave applications")
 		return
 	}
@@ -922,7 +1038,7 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{
-		"message": "Leave cancelled successfully",
+		"message":  "Leave cancelled successfully",
 		"leave_id": leaveID,
 	})
 }
@@ -939,6 +1055,19 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 	if role != "SUPERADMIN" && role != "ADMIN" && role != "MANAGER" {
 		utils.RespondWithError(c, 403, "only SUPERADMIN, ADMIN, and MANAGER can withdraw approved leaves")
 		return
+	}
+
+	// 2️⃣A Check if MANAGER has permission to withdraw leaves
+	if role == "MANAGER" {
+		hasPermission, err := h.Query.ChackManagerPermission()
+		if err != nil {
+			utils.RespondWithError(c, http.StatusInternalServerError, "failed to check manager permission")
+			return
+		}
+		if !hasPermission {
+			utils.RespondWithError(c, 403, "MANAGER does not have permission to withdraw leaves")
+			return
+		}
 	}
 
 	// 3️⃣ Parse Leave ID
@@ -980,7 +1109,13 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		return
 	}
 
-	// 7️⃣ Manager can only withdraw leaves of their team members
+	// 7️⃣ Prevent withdrawing own leave
+	if leave.EmployeeID == currentUserID {
+		utils.RespondWithError(c, 403, "you cannot withdraw your own leave. Please contact your manager or admin")
+		return
+	}
+
+	// 8️⃣ Manager can only withdraw leaves of their team members
 	if role == "MANAGER" {
 		var managerID uuid.UUID
 		err := tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
@@ -1005,7 +1140,7 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 	if withdrawalReason == "" {
 		withdrawalReason = fmt.Sprintf("Withdrawn by %s", role)
 	}
-	
+
 	_, err = tx.Exec(`
 		UPDATE Tbl_Leave 
 		SET status='WITHDRAWN', reason=$1, updated_at=NOW() 
@@ -1027,7 +1162,29 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		return
 	}
 
-	// 1️⃣1️⃣ Commit transaction
+	// 1️⃣1️⃣ Fetch data BEFORE committing transaction
+	var empDetails struct {
+		Email    string `db:"email"`
+		FullName string `db:"full_name"`
+	}
+	err = h.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
+	if err != nil {
+		fmt.Printf("❌ Failed to fetch employee details: %v\n", err)
+	}
+
+	var leaveTypeName string
+	err = h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
+	if err != nil {
+		fmt.Printf("❌ Failed to fetch leave type: %v\n", err)
+	}
+
+	var withdrawnByName string
+	err = h.Query.DB.Get(&withdrawnByName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", currentUserID)
+	if err != nil {
+		fmt.Printf("❌ Failed to fetch withdrawn by name: %v\n", err)
+	}
+
+	// Commit transaction
 	err = tx.Commit()
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to commit transaction")
@@ -1035,35 +1192,30 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 	}
 
 	// 1️⃣2️⃣ Send notification (async)
-	go func() {
-		var empDetails struct {
-			Email    string `db:"email"`
-			FullName string `db:"full_name"`
-		}
-		h.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", leave.EmployeeID)
-
-		var leaveTypeName string
-		h.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
-
-		var withdrawnByName string
-		h.Query.DB.Get(&withdrawnByName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", currentUserID)
-
-		// Send withdrawal notification
-		err := utils.SendLeaveWithdrawalEmail(
-			empDetails.Email,
-			empDetails.FullName,
-			leaveTypeName,
+	if empDetails.Email != "" && leaveTypeName != "" && withdrawnByName != "" {
+		go func(email, name, leaveType, startDate, endDate string, days float64, withdrawnBy, withdrawnRole, reason string) {
+			fmt.Printf("📧 Sending withdrawal email to %s...\n", email)
+			err := utils.SendLeaveWithdrawalEmail(
+				email,
+				name,
+				leaveType,
+				startDate,
+				endDate,
+				days,
+				withdrawnBy,
+				withdrawnRole,
+				reason,
+			)
+			if err != nil {
+				fmt.Printf("❌ Failed to send withdrawal email: %v\n", err)
+			} else {
+				fmt.Printf("✅ Withdrawal email sent successfully to %s\n", email)
+			}
+		}(empDetails.Email, empDetails.FullName, leaveTypeName,
 			leave.StartDate.Format("2006-01-02"),
 			leave.EndDate.Format("2006-01-02"),
-			leave.Days,
-			withdrawnByName,
-			role,
-			input.Reason,
-		)
-		if err != nil {
-			fmt.Printf("Failed to send withdrawal email: %v\n", err)
-		}
-	}()
+			leave.Days, withdrawnByName, role, input.Reason)
+	}
 
 	// 1️⃣3️⃣ Response
 	c.JSON(200, gin.H{
@@ -1073,5 +1225,54 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		"withdrawal_by":     currentUserID,
 		"withdrawal_role":   role,
 		"withdrawal_reason": withdrawalReason,
+	})
+}
+
+// GetManagerLeaveHistory - GET /api/leaves/manager/history
+// Manager gets leave history of their team members
+func (h *HandlerFunc) GetManagerLeaveHistory(c *gin.Context) {
+	// 1️⃣ Get current user info
+	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
+	role := c.GetString("role")
+
+	// 2️⃣ Permission check - Only MANAGER can use this endpoint
+	if role != "MANAGER" {
+		utils.RespondWithError(c, 403, "only managers can access team leave history")
+		return
+	}
+
+	// 3️⃣ Query to get team members' leave history
+	query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		JOIN Tbl_Employee e ON l.employee_id = e.id
+		JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		WHERE e.manager_id = $1
+		ORDER BY l.created_at DESC
+	`
+
+	// 4️⃣ Execute query
+	var result []models.LeaveResponse
+	err := h.Query.DB.Select(&result, query, currentUserID)
+	if err != nil {
+		utils.RespondWithError(c, 500, "failed to fetch team leave history: "+err.Error())
+		return
+	}
+
+	// 5️⃣ Response
+	c.JSON(200, gin.H{
+		"message":     "team leave history fetched successfully",
+		"manager_id":  currentUserID,
+		"total_leaves": len(result),
+		"leaves":      result,
 	})
 }

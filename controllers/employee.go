@@ -267,17 +267,17 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 	}
 
 	// 5️ Check if employee already has a manager
-	var existingManager uuid.UUID
-	err = h.Query.DB.Get(&existingManager, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", empID)
-	if err != nil {
-		utils.RespondWithError(c, 404, "employee not found")
-		return
-	}
+	// var existingManager uuid.UUID
+	// err = h.Query.DB.Get(&existingManager, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", empID)
+	// if err != nil {
+	// 	utils.RespondWithError(c, 404, "employee not found")
+	// 	return
+	// }
 
-	if existingManager != uuid.Nil {
-		utils.RespondWithError(c, 400, "employee already has a manager assigned")
-		return
-	}
+	// if existingManager != uuid.Nil {
+	// 	utils.RespondWithError(c, 400, "employee already has a manager assigned")
+	// 	return
+	// }
 
 	// 6️ Validate Manager exists, active and role = MANAGER
 	var mgrRole, mgrStatus string
@@ -496,5 +496,34 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"message":     "password updated successfully",
 		"employee_id": empID,
+	})
+}
+
+// GetMyTeam - GET /api/employee/my-team
+// Manager gets list of employees who report to them
+func (h *HandlerFunc) GetMyTeam(c *gin.Context) {
+	// 1️⃣ Get current user info
+	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
+	role := c.GetString("role")
+
+	// 2️⃣ Permission check - Only MANAGER can use this endpoint
+	if role != "MANAGER" {
+		utils.RespondWithError(c, 403, "only managers can access team member list")
+		return
+	}
+
+	// 3️⃣ Fetch team members
+	employees, err := h.Query.GetEmployeesByManagerID(currentUserID)
+	if err != nil {
+		utils.RespondWithError(c, 500, "failed to fetch team members: "+err.Error())
+		return
+	}
+
+	// 4️⃣ Response
+	c.JSON(200, gin.H{
+		"message":      "team members fetched successfully",
+		"manager_id":   currentUserID,
+		"team_count":   len(employees),
+		"team_members": employees,
 	})
 }

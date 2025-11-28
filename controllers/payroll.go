@@ -523,8 +523,8 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 	var rows *sql.Rows
 	var err error
 
-	// 🌟 If Employee -> only their slips
-	if role == "EMPLOYEE" {
+	// 🌟 If Employee or Manager -> only their own slips
+	if role == "EMPLOYEE" || role == "MANAGER" {
 		empIDValue, ok := c.Get("user_id")
 		if !ok {
 			utils.RespondWithError(c, 500, "Failed to get employee ID")

@@ -30,15 +30,16 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	employees := r.Group("/api/employee")
 	employees.Use(middleware.AuthMiddleware(h)) // Protect employee routes
 	{
-		employees.GET("/", h.GetEmployee)                         // List all employees (SUPER_ADMIN, ADMIN/HR)
-		employees.GET("/:id", h.GetEmployeeById)                  // Get employee details (Self/Manager/Admin)
-		employees.POST("/", h.CreateEmployee)                     // Create employee (SUPER_ADMIN, ADMIN/HR)
-		employees.PATCH("/:id", h.UpdateEmployeeInfo)             // Update employee info (SUPER_ADMIN, ADMIN/HR)
+		employees.GET("/", h.GetEmployee)                          // List all employees (SUPER_ADMIN, ADMIN/HR)
+		employees.GET("/my-team", h.GetMyTeam)                     // Get manager's team members (MANAGER only)
+		employees.GET("/:id", h.GetEmployeeById)                   // Get employee details (Self/Manager/Admin)
+		employees.POST("/", h.CreateEmployee)                      // Create employee (SUPER_ADMIN, ADMIN/HR)
+		employees.PATCH("/:id", h.UpdateEmployeeInfo)              // Update employee info (SUPER_ADMIN, ADMIN/HR)
 		employees.PATCH("/:id/password", h.UpdateEmployeePassword) // Update employee password (SUPER_ADMIN, ADMIN, HR)
-		employees.PATCH("/:id/role", h.UpdateEmployeeRole)        // Change employee role (SUPER_ADMIN, ADMIN/HR)
-		employees.PATCH("/:id/manager", h.UpdateEmployeeManager)  // Set/change manager (SUPER_ADMIN, ADMIN/HR)
-		employees.PUT("/deactivate/:id", h.DeleteEmployeeStatus)  // Deactivate/Activate employee (SUPER_ADMIN, ADMIN/HR)
-		employees.GET("/:id/reports", h.GetEmployeeReports)       // Get direct reports (Self/Manager/Admin)
+		employees.PATCH("/:id/role", h.UpdateEmployeeRole)         // Change employee role (SUPER_ADMIN, ADMIN/HR)
+		employees.PATCH("/:id/manager", h.UpdateEmployeeManager)   // Set/change manager (SUPER_ADMIN, ADMIN/HR)
+		employees.PUT("/deactivate/:id", h.DeleteEmployeeStatus)   // Deactivate/Activate employee (SUPER_ADMIN, ADMIN/HR)
+		employees.GET("/:id/reports", h.GetEmployeeReports)        // Get direct reports (Self/Manager/Admin)
 	}
 
 	// ----------------- Leaves -----------------
@@ -49,6 +50,7 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 		leaves.POST("/admin-add", h.AdminAddLeave)                 // Admin/Manager adds leave on behalf of employee
 		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy)    // Admin creates leave policy
 		leaves.GET("/Get-All-Leave-Policy", h.GetAllLeavePolicies) // Get all leave policies
+		leaves.GET("/manager/history", h.GetManagerLeaveHistory)   // Manager gets team leave history
 		leaves.POST("/:id/action", h.ActionLeave)                  // Approve/Reject leave
 		leaves.DELETE("/:id/cancel", h.CancelLeave)                // Cancel pending leave (Employee/Admin)
 		leaves.POST("/:id/withdraw", h.WithdrawLeave)              // Withdraw approved leave (Admin/Manager)

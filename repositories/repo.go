@@ -349,7 +349,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
         JOIN Tbl_Role r ON e.role_id = r.id
         WHERE e.id = $1
     `
-	
+
 	err := r.DB.QueryRow(query, empID).Scan(
 		&emp.ID,
 		&emp.FullName,
@@ -363,23 +363,23 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 		&emp.UpdatedAt,
 		&emp.DeletedAt,
 	)
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Fetch manager name if exists
 	if emp.ManagerID != nil {
 		var mName string
 		err := r.DB.QueryRow(`
             SELECT full_name FROM Tbl_Employee WHERE id = $1
         `, emp.ManagerID).Scan(&mName)
-		
+
 		if err == nil {
 			emp.ManagerName = &mName
 		}
 	}
-	
+
 	return &emp, nil
 }
 
@@ -401,4 +401,64 @@ func (r *Repository) UpdateEmployeePassword(empID uuid.UUID, hashedPassword stri
         WHERE id = $2
     `, hashedPassword, empID)
 	return err
+}
+
+func (r *Repository) ChackManagerPermission() (bool, error) {
+	var exists bool
+	query := `SELECT allow_manager_add_leave FROM Tbl_Company_Settings LIMIT 1`
+
+	err := r.DB.QueryRow(query).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+// ------------------ GET EMPLOYEES BY MANAGER ID ------------------
+func (r *Repository) GetEmployeesByManagerID(managerID uuid.UUID) ([]models.EmployeeInput, error) {
+	query := `
+        SELECT 
+            e.id, e.full_name, e.email, e.status,
+            r.type AS role, e.manager_id,
+            e.salary, e.joining_date,
+            e.created_at, e.updated_at, e.deleted_at
+        FROM Tbl_Employee e
+        JOIN Tbl_Role r ON e.role_id = r.id
+        WHERE e.manager_id = $1
+        ORDER BY e.full_name
+    `
+
+	rows, err := r.DB.Query(query, managerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var employees []models.EmployeeInput
+
+	for rows.Next() {
+		var emp models.EmployeeInput
+
+		err := rows.Scan(
+			&emp.ID,
+			&emp.FullName,
+			&emp.Email,
+			&emp.Status,
+			&emp.Role,
+			&emp.ManagerID,
+			&emp.Salary,
+			&emp.JoiningDate,
+			&emp.CreatedAt,
+			&emp.UpdatedAt,
+			&emp.DeletedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		employees = append(employees, emp)
+	}
+
+	return employees, nil
 }
