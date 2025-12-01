@@ -22,6 +22,7 @@ type EmployeeInput struct {
 	ManagerID   *uuid.UUID `json:"manager_id,omitempty"`   // optional UUID
 	Salary      *float64   `json:"salary,omitempty"`       // optional
 	JoiningDate *time.Time `json:"joining_date,omitempty"` // optional
+	EndingDate  *time.Time `json:"ending_date,omitempty"`  // optional
 	Status      *string    `json:"status,omitempty"`       // optional, new field
 	CreatedAt   *time.Time `json:"created_at,omitempty"`   // optional
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`   // optional

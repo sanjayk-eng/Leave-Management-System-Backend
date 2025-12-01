@@ -83,6 +83,10 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 		// Download payslip PDF for a specific employee payslip ID
 		payroll.GET("/payslips/:id/pdf", h.GetPayslipPDF)
 		// GET /api/payroll/payslips/{id}/pdf
+
+		// Withdraw payslip (two-level approval: Manager → Admin)
+		payroll.POST("/payslips/:id/withdraw", h.WithdrawPayslip)
+		// POST /api/payroll/payslips/{id}/withdraw
 	}
 
 	// ----------------- Settings -----------------

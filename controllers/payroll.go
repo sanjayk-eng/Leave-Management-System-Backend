@@ -616,6 +616,238 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 	})
 }
 
+// WithdrawPayslip - POST /api/payroll/payslips/:id/withdraw
+// Two-level approval system for payslip withdrawal:
+// 1. MANAGER approves → Status: MANAGER_APPROVED (no salary restoration)
+// 2. ADMIN/SUPERADMIN finalizes → Status: WITHDRAWN (salary restored/adjusted)
+func (h *HandlerFunc) WithdrawPayslip(c *gin.Context) {
+	roleRaw, _ := c.Get("role")
+	role := roleRaw.(string)
+
+	if role == "EMPLOYEE" {
+		utils.RespondWithError(c, 403, "Employees cannot withdraw payslips")
+		return
+	}
+
+	approverIDRaw, _ := c.Get("user_id")
+	approverID, _ := uuid.Parse(approverIDRaw.(string))
+
+	payslipID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		utils.RespondWithError(c, 400, "Invalid payslip ID")
+		return
+	}
+
+	var body struct {
+		Action string `json:"action" validate:"required"` // APPROVE/REJECT
+		Reason string `json:"reason"`                     // Optional reason for withdrawal
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.RespondWithError(c, 400, "Invalid payload: "+err.Error())
+		return
+	}
+
+	body.Action = strings.ToUpper(body.Action)
+	if body.Action != "APPROVE" && body.Action != "REJECT" {
+		utils.RespondWithError(c, 400, "Action must be APPROVE or REJECT")
+		return
+	}
+
+	tx, err := h.Query.DB.Beginx()
+	if err != nil {
+		utils.RespondWithError(c, 500, "Failed to start transaction")
+		return
+	}
+	defer tx.Rollback()
+
+	// Fetch payslip with status
+	var payslip struct {
+		ID              uuid.UUID  `db:"id"`
+		EmployeeID      uuid.UUID  `db:"employee_id"`
+		PayrollRunID    uuid.UUID  `db:"payroll_run_id"`
+		BasicSalary     float64    `db:"basic_salary"`
+		WorkingDays     int        `db:"working_days"`
+		AbsentDays      int        `db:"absent_days"`
+		DeductionAmount float64    `db:"deduction_amount"`
+		NetSalary       float64    `db:"net_salary"`
+		Status          *string    `db:"status"` // Can be NULL in old records
+		WithdrawnBy     *uuid.UUID `db:"withdrawn_by"`
+		WithdrawnReason *string    `db:"withdrawn_reason"`
+	}
+
+	err = tx.Get(&payslip, `
+		SELECT id, employee_id, payroll_run_id, basic_salary, working_days, 
+		       absent_days, deduction_amount, net_salary, status, withdrawn_by, withdrawn_reason
+		FROM Tbl_Payslip 
+		WHERE id=$1 
+		FOR UPDATE
+	`, payslipID)
+	if err != nil {
+		utils.RespondWithError(c, 404, "Payslip not found: "+err.Error())
+		return
+	}
+
+	// 🔒 Prevent self-withdrawal
+	if payslip.EmployeeID == approverID {
+		utils.RespondWithError(c, 403, "You cannot withdraw your own payslip")
+		return
+	}
+
+	// Default status to FINALIZED if NULL (for backward compatibility)
+	currentStatus := "FINALIZED"
+	if payslip.Status != nil {
+		currentStatus = *payslip.Status
+	}
+
+	// 🔒 MANAGER validation
+	if role == "MANAGER" {
+		// Check manager permission setting
+		exists, err := h.Query.ChackManagerPermission()
+		if err != nil {
+			utils.RespondWithError(c, 500, "Failed to get manager permission")
+			return
+		}
+		if !exists {
+			utils.RespondWithError(c, 403, "Manager withdrawal is not enabled")
+			return
+		}
+
+		// Verify reporting relationship
+		var managerID uuid.UUID
+		err = tx.Get(&managerID, "SELECT manager_id FROM Tbl_Employee WHERE id=$1", payslip.EmployeeID)
+		if err != nil {
+			utils.RespondWithError(c, 500, "Failed to verify reporting relationship")
+			return
+		}
+
+		if managerID != approverID {
+			utils.RespondWithError(c, 403, "You can only withdraw payslips of employees who report to you")
+			return
+		}
+
+		// Manager can only act on FINALIZED payslips
+		if currentStatus != "FINALIZED" {
+			utils.RespondWithError(c, 400, fmt.Sprintf("Cannot process payslip with status: %s", currentStatus))
+			return
+		}
+	}
+
+	// 🔒 ADMIN/SUPERADMIN validation
+	if role == "ADMIN" || role == "SUPERADMIN" {
+		// Admin can act on FINALIZED or MANAGER_APPROVED payslips
+		if currentStatus != "FINALIZED" && currentStatus != "MANAGER_APPROVED" {
+			utils.RespondWithError(c, 400, fmt.Sprintf("Cannot process payslip with status: %s", currentStatus))
+			return
+		}
+	}
+
+	// ========================================
+	// REJECT ACTION
+	// ========================================
+	if body.Action == "REJECT" {
+		// Reset status back to FINALIZED
+		_, err = tx.Exec(`
+			UPDATE Tbl_Payslip 
+			SET status='FINALIZED', withdrawn_by=NULL, withdrawn_reason=NULL, updated_at=NOW() 
+			WHERE id=$1
+		`, payslipID)
+		if err != nil {
+			utils.RespondWithError(c, 500, "Failed to reject withdrawal: "+err.Error())
+			return
+		}
+
+		tx.Commit()
+
+		c.JSON(200, gin.H{
+			"message": "Payslip withdrawal rejected successfully",
+			"status":  "FINALIZED",
+		})
+		return
+	}
+
+	// ========================================
+	// APPROVE ACTION
+	// ========================================
+
+	// MANAGER APPROVAL (First Level)
+	if role == "MANAGER" {
+		_, err = tx.Exec(`
+			UPDATE Tbl_Payslip 
+			SET status='MANAGER_APPROVED', withdrawn_by=$2, withdrawn_reason=$3, updated_at=NOW() 
+			WHERE id=$1
+		`, payslipID, approverID, body.Reason)
+		if err != nil {
+			utils.RespondWithError(c, 500, "Failed to approve withdrawal: "+err.Error())
+			return
+		}
+
+		tx.Commit()
+
+		c.JSON(200, gin.H{
+			"message": "Payslip withdrawal approved by manager. Pending final approval from ADMIN/SUPERADMIN",
+			"status":  "MANAGER_APPROVED",
+		})
+		return
+	}
+
+	// ADMIN/SUPERADMIN FINAL APPROVAL (Second Level)
+	if role == "ADMIN" || role == "SUPERADMIN" {
+		// Update status to WITHDRAWN
+		_, err = tx.Exec(`
+			UPDATE Tbl_Payslip 
+			SET status='WITHDRAWN', withdrawn_by=$2, withdrawn_reason=$3, updated_at=NOW() 
+			WHERE id=$1
+		`, payslipID, approverID, body.Reason)
+		if err != nil {
+			utils.RespondWithError(c, 500, "Failed to finalize withdrawal: "+err.Error())
+			return
+		}
+
+		// Fetch employee and payroll details for notification
+		var empDetails struct {
+			Email    string `db:"email"`
+			FullName string `db:"full_name"`
+		}
+		h.Query.DB.Get(&empDetails, "SELECT email, full_name FROM Tbl_Employee WHERE id=$1", payslip.EmployeeID)
+
+		var payrollDetails struct {
+			Month int `db:"month"`
+			Year  int `db:"year"`
+		}
+		h.Query.DB.Get(&payrollDetails, "SELECT month, year FROM Tbl_Payroll_run WHERE id=$1", payslip.PayrollRunID)
+
+		tx.Commit()
+
+		// Send withdrawal notification
+		if empDetails.Email != "" {
+			go func() {
+				withdrawnByName := ""
+				h.Query.DB.Get(&withdrawnByName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", approverID)
+
+				utils.SendPayslipWithdrawalEmail(
+					empDetails.Email,
+					empDetails.FullName,
+					payrollDetails.Month,
+					payrollDetails.Year,
+					payslip.NetSalary,
+					withdrawnByName,
+					role,
+					body.Reason,
+				)
+			}()
+		}
+
+		c.JSON(200, gin.H{
+			"message": "Payslip withdrawn successfully",
+			"status":  "WITHDRAWN",
+		})
+		return
+	}
+
+	// Should not reach here
+	utils.RespondWithError(c, 500, "Unexpected error in payslip withdrawal process")
+}
+
 
 // calculateAbsentDaysForMonth calculates the number of absent days for a specific month
 // Handles cross-month leaves correctly by counting only days within the payroll month

@@ -229,6 +229,44 @@ Zenithive Leave Management System
 	return SendEmail(employeeEmail, subject, body)
 }
 
+// SendLeaveWithdrawalPendingEmail sends notification to admins when manager requests withdrawal
+func SendLeaveWithdrawalPendingEmail(recipients []string, employeeName, leaveType, startDate, endDate string, days float64, requestedBy, reason string) error {
+	subject := fmt.Sprintf("Leave Withdrawal Request - %s", employeeName)
+	
+	reasonText := ""
+	if reason != "" {
+		reasonText = fmt.Sprintf("\nReason: %s", reason)
+	}
+
+	body := fmt.Sprintf(`
+Dear Admin,
+
+A leave withdrawal request has been submitted and requires your approval.
+
+Employee: %s
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Requested By: %s (MANAGER)
+Status: Pending Withdrawal Approval%s
+
+Please login to the system to approve or reject this withdrawal request.
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, leaveType, startDate, endDate, days, requestedBy, reasonText)
+
+	for _, recipient := range recipients {
+		if err := SendEmail(recipient, subject, body); err != nil {
+			// Log error but continue sending to other recipients
+			fmt.Printf("Failed to send email to %s: %v\n", recipient, err)
+		}
+	}
+
+	return nil
+}
+
 // SendLeaveWithdrawalEmail sends notification when approved leave is withdrawn
 func SendLeaveWithdrawalEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64, withdrawnBy, withdrawnByRole, reason string) error {
 	subject := "Leave Request Withdrawn"
@@ -256,6 +294,38 @@ If you have any questions about this withdrawal, please contact your manager or 
 Best regards,
 Zenithive Leave Management System
 `, employeeName, withdrawnBy, withdrawnByRole, leaveType, startDate, endDate, days, reasonText, days)
+
+	return SendEmail(employeeEmail, subject, body)
+}
+
+// SendPayslipWithdrawalEmail sends notification when payslip is withdrawn
+func SendPayslipWithdrawalEmail(employeeEmail, employeeName string, month, year int, netSalary float64, withdrawnBy, withdrawnByRole, reason string) error {
+	monthNames := []string{"", "January", "February", "March", "April", "May", "June",
+		"July", "August", "September", "October", "November", "December"}
+	
+	subject := fmt.Sprintf("Payslip Withdrawn - %s %d", monthNames[month], year)
+	
+	reasonText := ""
+	if reason != "" {
+		reasonText = fmt.Sprintf("\nReason: %s", reason)
+	}
+
+	body := fmt.Sprintf(`
+Dear %s,
+
+Your payslip for %s %d has been withdrawn by %s (%s).
+
+Pay Period: %s %d
+Net Salary: ₹%.2f
+Status: WITHDRAWN%s
+
+This payslip has been marked as withdrawn and may require reprocessing. Please contact your HR department or payroll administrator for more information.
+
+If you have any questions about this withdrawal, please reach out to your manager or HR department.
+
+Best regards,
+Zenithive Payroll Management System
+`, employeeName, monthNames[month], year, withdrawnBy, withdrawnByRole, monthNames[month], year, netSalary, reasonText)
 
 	return SendEmail(employeeEmail, subject, body)
 }

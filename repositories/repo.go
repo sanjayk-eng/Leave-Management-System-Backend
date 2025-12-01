@@ -52,7 +52,7 @@ func (r *Repository) GetAllEmployees() ([]models.EmployeeInput, error) {
         SELECT 
             e.id, e.full_name, e.email, e.status,
             r.type AS role, e.password, e.manager_id,
-            e.salary, e.joining_date,
+            e.salary, e.joining_date, e.ending_date,
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
@@ -80,6 +80,7 @@ func (r *Repository) GetAllEmployees() ([]models.EmployeeInput, error) {
 			&emp.ManagerID,
 			&emp.Salary,
 			&emp.JoiningDate,
+			&emp.EndingDate,
 			&emp.CreatedAt,
 			&emp.UpdatedAt,
 			&emp.DeletedAt,
@@ -343,7 +344,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
         SELECT 
             e.id, e.full_name, e.email, e.status,
             r.type AS role, e.manager_id,
-            e.salary, e.joining_date,
+            e.salary, e.joining_date, e.ending_date,
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
@@ -359,6 +360,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 		&emp.ManagerID,
 		&emp.Salary,
 		&emp.JoiningDate,
+		&emp.EndingDate,
 		&emp.CreatedAt,
 		&emp.UpdatedAt,
 		&emp.DeletedAt,
@@ -384,12 +386,12 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 }
 
 // ------------------ UPDATE EMPLOYEE INFO ------------------
-func (r *Repository) UpdateEmployeeInfo(empID uuid.UUID, fullName, email string, salary *float64, joiningDate *time.Time) error {
+func (r *Repository) UpdateEmployeeInfo(empID uuid.UUID, fullName, email string, salary *float64, joiningDate, endingDate *time.Time) error {
 	_, err := r.DB.Exec(`
         UPDATE Tbl_Employee
-        SET full_name = $1, email = $2, salary = $3, joining_date = $4, updated_at = NOW()
-        WHERE id = $5
-    `, fullName, email, salary, joiningDate, empID)
+        SET full_name = $1, email = $2, salary = $3, joining_date = $4, ending_date = $5, updated_at = NOW()
+        WHERE id = $6
+    `, fullName, email, salary, joiningDate, endingDate, empID)
 	return err
 }
 
@@ -421,7 +423,7 @@ func (r *Repository) GetEmployeesByManagerID(managerID uuid.UUID) ([]models.Empl
         SELECT 
             e.id, e.full_name, e.email, e.status,
             r.type AS role, e.manager_id,
-            e.salary, e.joining_date,
+            e.salary, e.joining_date, e.ending_date,
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
@@ -449,6 +451,7 @@ func (r *Repository) GetEmployeesByManagerID(managerID uuid.UUID) ([]models.Empl
 			&emp.ManagerID,
 			&emp.Salary,
 			&emp.JoiningDate,
+			&emp.EndingDate,
 			&emp.CreatedAt,
 			&emp.UpdatedAt,
 			&emp.DeletedAt,

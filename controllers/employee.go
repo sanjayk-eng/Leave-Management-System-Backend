@@ -410,6 +410,7 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		Email       *string     `json:"email"`
 		Salary      *float64    `json:"salary"`
 		JoiningDate *time.Time  `json:"joining_date"`
+		EndingDate  *time.Time  `json:"ending_date"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, 400, "invalid input: "+err.Error())
@@ -417,12 +418,12 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 	}
 
 	// 5️⃣ Permission checks
-	isAdmin := role == "SUPERADMIN" || role == "ADMIN" || role == "HR"
+	isAdmin := role == "SUPERADMIN" || role == "ADMIN"
 	isSelf := currentUserID == empID
 
-	// Check if trying to update email, salary, or joining_date
-	if (input.Email != nil || input.Salary != nil || input.JoiningDate != nil) && !isAdmin {
-		utils.RespondWithError(c, 403, "only SUPERADMIN and ADMIN can update email, salary, and joining date")
+	// Check if trying to update email, salary, joining_date, or ending_date
+	if (input.Email != nil || input.Salary != nil || input.JoiningDate != nil || input.EndingDate != nil) && !isAdmin {
+		utils.RespondWithError(c, 403, "only SUPERADMIN and ADMIN can update email, salary, joining date, and ending date")
 		return
 	}
 
@@ -473,8 +474,13 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		finalJoiningDate = input.JoiningDate
 	}
 
+	finalEndingDate := existingEmp.EndingDate
+	if input.EndingDate != nil {
+		finalEndingDate = input.EndingDate
+	}
+
 	// 8️⃣ Update employee info
-	err = h.Query.UpdateEmployeeInfo(empID, finalName, finalEmail, finalSalary, finalJoiningDate)
+	err = h.Query.UpdateEmployeeInfo(empID, finalName, finalEmail, finalSalary, finalJoiningDate, finalEndingDate)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to update employee: "+err.Error())
 		return

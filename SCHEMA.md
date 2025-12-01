@@ -194,6 +194,7 @@ Stores employee information.
 | manager_id | UUID | FK → Tbl_Employee.id | Manager reference (self-referencing) |
 | salary | NUMERIC | | Employee salary |
 | joining_date | DATE | | Date of joining |
+| ending_date | DATE | NULL | Date of leaving/resignation (optional) |
 | status | VARCHAR(20) | DEFAULT 'active' | Employee status (active/inactive) |
 | deleted_at | TIMESTAMP | NULL | Soft delete timestamp |
 | created_at | TIMESTAMP | DEFAULT NOW() | Record creation time |
@@ -230,7 +231,7 @@ Stores leave applications.
 | start_date | DATE | | Leave start date |
 | end_date | DATE | | Leave end date |
 | days | NUMERIC | | Number of leave days |
-| status | TEXT | | Leave status (Pending/APPROVED/REJECTED) |
+| status | TEXT | | Leave status (Pending/MANAGER_APPROVED/APPROVED/REJECTED/CANCELLED/WITHDRAWAL_PENDING/WITHDRAWN) |
 | applied_by | UUID | FK → Tbl_Employee.id | Who applied (manager for admin-add) |
 | approved_by | UUID | FK → Tbl_Employee.id | Who approved/rejected |
 | created_at | TIMESTAMP | DEFAULT NOW() | Application time |
