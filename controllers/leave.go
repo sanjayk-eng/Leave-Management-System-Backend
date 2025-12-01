@@ -385,9 +385,13 @@ func (s *HandlerFunc) GetAllLeavePolicies(c *gin.Context) {
 }
 
 // ActionLeave - POST /api/leaves/:id/action
-// Two-level approval system:
+// Two-level approval/rejection system:
+// APPROVAL FLOW:
 // 1. MANAGER approves → Status: MANAGER_APPROVED (no balance deduction)
 // 2. ADMIN/SUPERADMIN finalizes → Status: APPROVED (balance deducted)
+// REJECTION FLOW:
+// 1. MANAGER rejects → Status: MANAGER_REJECTED (pending final rejection)
+// 2. ADMIN/SUPERADMIN finalizes → Status: REJECTED (final rejection)
 func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
@@ -707,8 +711,8 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 	role := c.GetString("role")
 	userID, _ := uuid.Parse(c.GetString("user_id"))
 
-	// 2️⃣ Base Query
-	query := `
+	// 2️⃣ Base Query - Explicitly select only the columns we need
+	baseQuery := `
 	SELECT 
 		l.id,
 		e.full_name AS employee,
@@ -720,35 +724,34 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		l.status,
 		l.created_at AS applied_at
 	FROM Tbl_Leave l
-	JOIN Tbl_Employee e ON l.employee_id = e.id
-	JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+	INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+	INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 	`
 
 	var (
 		conditions []string
-		args       []any
+		args       []interface{}
 	)
 
 	// 3️⃣ Role-based conditions
 	if role == "EMPLOYEE" {
 		conditions = append(conditions, "l.employee_id = $1")
 		args = append(args, userID)
-	}
-
-	if role == "MANAGER" {
+	} else if role == "MANAGER" {
 		// Manager can see: their own leaves + their team members' leaves
 		conditions = append(conditions, "(e.manager_id = $1 OR l.employee_id = $1)")
 		args = append(args, userID)
 	}
 
 	// Apply conditions safely
+	query := baseQuery
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
 	query += " ORDER BY l.created_at DESC"
 
-	// 4️⃣ Execute
+	// 4️⃣ Execute with Queryx to avoid prepared statement caching issues
 	var result []models.LeaveResponse
 	err := h.Query.DB.Select(&result, query, args...)
 	if err != nil {
