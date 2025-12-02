@@ -10,12 +10,16 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
+    # ✅ Set environment variable at job level
+    env:
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+
     steps:
-   
+    # 1️⃣ Checkout code
     - name: Checkout code
       uses: actions/checkout@v4
 
-
+    # 2️⃣ Setup Go
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
@@ -23,17 +27,19 @@ jobs:
         check-latest: true
         cache: true
 
-   
+    # 3️⃣ Install dependencies
     - name: Install dependencies
       run: go mod download
 
+    # 4️⃣ Run tests
     - name: Run tests
       run: go test ./... -v || echo "⚠️ No tests found"
 
+    # 5️⃣ Build Go binary
     - name: Build App
       run: go build -o ums-backend main.go
 
-  
+    # 6️⃣ Verify Build
     - name: Verify Build
       run: |
         if [ -f "ums-backend" ]; then
@@ -47,12 +53,10 @@ jobs:
     # 7️⃣ Deploy to Render
     - name: Deploy to Render
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      env:
-        RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
       run: |
         if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-          echo "⚠️ RENDER_DEPLOY_HOOK secret not configured"
-          echo "✅ Render will auto-deploy via GitHub integration"
+          echo "❌ RENDER_DEPLOY_HOOK secret not configured. Deployment aborted."
+          exit 1
         else
           echo "🚀 Triggering manual deploy via webhook..."
           curl -X POST "$RENDER_DEPLOY_HOOK"
