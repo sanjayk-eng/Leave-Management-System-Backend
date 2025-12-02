@@ -19,7 +19,7 @@ jobs:
       with:
         go-version: "1.22"
         check-latest: true
-        cache: "gomod"
+        cache: true
 
     - name: Install dependencies
       run: go clean --modcache && go mod download
