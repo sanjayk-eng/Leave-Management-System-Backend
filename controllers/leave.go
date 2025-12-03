@@ -799,7 +799,17 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 	// Scan results manually
 	for rows.Next() {
 		var leave models.LeaveResponse
-		err := rows.StructScan(&leave)
+		err := rows.Scan(
+			&leave.ID,
+			&leave.Employee,
+			&leave.LeaveType,
+			&leave.StartDate,
+			&leave.EndDate,
+			&leave.Days,
+			&leave.Reason,
+			&leave.Status,
+			&leave.AppliedAt,
+		)
 		if err != nil {
 			fmt.Printf("❌ GetAllLeaves Scan Error: %v\n", err)
 			utils.RespondWithError(c, http.StatusInternalServerError, "Failed to parse leave data: "+err.Error())
