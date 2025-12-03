@@ -778,7 +778,7 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 	// Use Query instead of Queryx to avoid prepared statement caching issues
 	var result []models.LeaveResponse
 	
-	rows, err := h.Query.DB.Query(query, args...)
+	rows, err := h.Query.DB.Queryx(query, args...)
 	if err != nil {
 		// Log the error for debugging
 		fmt.Printf("❌ GetAllLeaves DB Error: %v\n", err)
