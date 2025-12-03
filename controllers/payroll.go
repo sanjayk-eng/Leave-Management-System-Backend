@@ -51,16 +51,30 @@ func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 	}
 
 
-	// --- Check if payroll already exists and is finalized ---
-	var existingStatus string
-	err := h.Query.DB.Get(&existingStatus, `
-        SELECT status 
+	// --- Check if payroll already exists ---
+	var existingRun struct {
+		ID     uuid.UUID `db:"id"`
+		Status string    `db:"status"`
+	}
+	err := h.Query.DB.Get(&existingRun, `
+        SELECT id, status 
         FROM Tbl_Payroll_run 
         WHERE month=$1 AND year=$2
     `, input.Month, input.Year)
-	if err == nil && strings.ToUpper(strings.TrimSpace(existingStatus)) == "FINALIZED" {
-		utils.RespondWithError(c, 400, "Payroll for this month and year is already finalized")
-		return
+	
+	if err == nil {
+		// Payroll run exists
+		status := strings.ToUpper(strings.TrimSpace(existingRun.Status))
+		
+		if status == "FINALIZED" {
+			utils.RespondWithError(c, 400, "Payroll for this month and year is already finalized. Cannot run payroll again.")
+			return
+		}
+		
+		if status == "PREVIEW" {
+			utils.RespondWithError(c, 400, fmt.Sprintf("Payroll for this month and year already exists with status PREVIEW (ID: %s). Please finalize or delete the existing payroll run before creating a new one.", existingRun.ID))
+			return
+		}
 	}
 
 	// --- Fetch active employees ---
@@ -180,8 +194,14 @@ func (h *HandlerFunc) FinalizePayroll(c *gin.Context) {
 	}
 
 	// --- Block if Already Finalized ---
-	if run.Status == "FINALIZED" {
-		utils.RespondWithError(c, 400, "Payroll already finalized")
+	if strings.ToUpper(strings.TrimSpace(run.Status)) == "FINALIZED" {
+		utils.RespondWithError(c, 400, "Payroll is already finalized. Cannot finalize again. Finalized payrolls are locked and cannot be modified.")
+		return
+	}
+	
+	// --- Block if not in PREVIEW status ---
+	if strings.ToUpper(strings.TrimSpace(run.Status)) != "PREVIEW" {
+		utils.RespondWithError(c, 400, fmt.Sprintf("Cannot finalize payroll with status: %s. Only PREVIEW payrolls can be finalized.", run.Status))
 		return
 	}
 
