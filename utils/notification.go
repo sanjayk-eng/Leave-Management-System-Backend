@@ -183,12 +183,16 @@ Zenithive Leave Management System
 }
 
 // SendPasswordUpdateEmail sends notification to employee when their password is updated by admin
-func SendPasswordUpdateEmail(employeeEmail, employeeName, updatedBy, updatedByRole string) error {
+func SendPasswordUpdateEmail(employeeEmail, employeeName, newPassword, updatedBy, updatedByRole string) error {
 	subject := "Your Password Has Been Updated"
 	body := fmt.Sprintf(`
 Dear %s,
 
 Your account password has been updated by %s (%s).
+
+Your new login credentials are:
+Email: %s
+Password: %s
 
 If you did not request this change, please contact your HR department immediately.
 
@@ -201,7 +205,7 @@ Login URL: [https://zenithiveapp.netlify.app]
 
 Best regards,
 Zenithive HR Team
-`, employeeName, updatedBy, updatedByRole)
+`, employeeName, updatedBy, updatedByRole, employeeEmail, newPassword)
 
 	return SendEmail(employeeEmail, subject, body)
 }

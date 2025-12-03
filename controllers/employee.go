@@ -571,7 +571,7 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 		return
 	}
 
-	// 8️ Send notification email to employee
+	// 8️ Send notification email to employee with new password
 	go func() {
 		var empDetails struct {
 			Email    string `db:"email"`
@@ -586,6 +586,7 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 		err := utils.SendPasswordUpdateEmail(
 			empDetails.Email,
 			empDetails.FullName,
+			input.NewPassword,
 			updatedByName,
 			role,
 		)
