@@ -154,7 +154,7 @@ func (h *HandlerFunc) UpdateEmployeeRole(c *gin.Context) {
 	// ---------------------------
 	role := c.GetString("role")
 	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
-	
+
 	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
@@ -420,11 +420,11 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 
 	// 4️⃣ Bind input JSON
 	var input struct {
-		FullName    *string     `json:"full_name"`
-		Email       *string     `json:"email"`
-		Salary      *float64    `json:"salary"`
-		JoiningDate *time.Time  `json:"joining_date"`
-		EndingDate  *time.Time  `json:"ending_date"`
+		FullName    *string    `json:"full_name"`
+		Email       *string    `json:"email"`
+		Salary      *float64   `json:"salary"`
+		JoiningDate *time.Time `json:"joining_date"`
+		EndingDate  *time.Time `json:"ending_date"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, 400, "invalid input: "+err.Error())
@@ -639,5 +639,83 @@ func (h *HandlerFunc) GetMyTeam(c *gin.Context) {
 		"manager_id":   currentUserID,
 		"team_count":   len(employees),
 		"team_members": employees,
+	})
+}
+
+// UpdateEmployeeDesignation - PATCH /api/employee/:id/designation
+// Only ADMIN, SUPERADMIN, and HR can assign/update employee designation
+func (h *HandlerFunc) UpdateEmployeeDesignation(c *gin.Context) {
+	// 1️⃣ Permission check
+	role := c.GetString("role")
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
+		utils.RespondWithError(c, http.StatusForbidden, "only ADMIN, SUPERADMIN, and HR can assign designations")
+		return
+	}
+
+	// 2️⃣ Parse Employee ID
+	empIDStr := c.Param("id")
+	empID, err := uuid.Parse(empIDStr)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusBadRequest, "invalid employee ID")
+		return
+	}
+
+	// 3️⃣ Check if employee exists
+	targetEmp, err := h.Query.GetEmployeeByID(empID)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusNotFound, "employee not found")
+		return
+	}
+
+	// 4️⃣ HR and ADMIN cannot modify SUPERADMIN
+	if (role == "ADMIN" || role == "HR") && targetEmp.Role == "SUPERADMIN" {
+		utils.RespondWithError(c, http.StatusForbidden, "HR and ADMIN cannot modify SUPERADMIN users")
+		return
+	}
+
+	// 5️⃣ Bind input JSON
+	var input struct {
+		DesignationID *string `json:"designation_id"` // Can be null to remove designation
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		utils.RespondWithError(c, http.StatusBadRequest, "invalid input: "+err.Error())
+		return
+	}
+
+	// 6️⃣ Parse and validate designation ID if provided
+	var designationID *uuid.UUID
+	if input.DesignationID != nil && *input.DesignationID != "" {
+		parsedID, err := uuid.Parse(*input.DesignationID)
+		if err != nil {
+			utils.RespondWithError(c, http.StatusBadRequest, "invalid designation ID")
+			return
+		}
+
+		// Check if designation exists
+		_, err = h.Query.GetDesignationByID(parsedID)
+		if err != nil {
+			utils.RespondWithError(c, http.StatusNotFound, "designation not found")
+			return
+		}
+		designationID = &parsedID
+	}
+
+	// 7️⃣ Update employee designation
+	err = h.Query.UpdateEmployeeDesignation(empID, designationID)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "failed to update designation: "+err.Error())
+		return
+	}
+
+	// 8️⃣ Response
+	message := "employee designation updated successfully"
+	if designationID == nil {
+		message = "employee designation removed successfully"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        message,
+		"employee_id":    empID,
+		"designation_id": designationID,
 	})
 }

@@ -51,7 +51,7 @@ func (r *Repository) GetAllEmployees() ([]models.EmployeeInput, error) {
 	query := `
         SELECT 
             e.id, e.full_name, e.email, e.status,
-            r.type AS role, e.password, e.manager_id,
+            r.type AS role, e.password, e.manager_id, e.designation_id,
             e.salary, e.joining_date, e.ending_date,
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
@@ -78,6 +78,7 @@ func (r *Repository) GetAllEmployees() ([]models.EmployeeInput, error) {
 			&emp.Role,
 			&emp.Password,
 			&emp.ManagerID,
+			&emp.DesignationID,
 			&emp.Salary,
 			&emp.JoiningDate,
 			&emp.EndingDate,
@@ -98,6 +99,18 @@ func (r *Repository) GetAllEmployees() ([]models.EmployeeInput, error) {
 
 			if err == nil {
 				emp.ManagerName = &mName
+			}
+		}
+
+		// ------- Fetch designation name if exists -------
+		if emp.DesignationID != nil {
+			var dName string
+			err := r.DB.QueryRow(`
+                SELECT designation_name FROM Tbl_Designation WHERE id = $1
+            `, emp.DesignationID).Scan(&dName)
+
+			if err == nil {
+				emp.DesignationName = &dName
 			}
 		}
 
@@ -343,7 +356,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 	query := `
         SELECT 
             e.id, e.full_name, e.email, e.status,
-            r.type AS role, e.manager_id,
+            r.type AS role, e.manager_id, e.designation_id,
             e.salary, e.joining_date, e.ending_date,
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
@@ -358,6 +371,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 		&emp.Status,
 		&emp.Role,
 		&emp.ManagerID,
+		&emp.DesignationID,
 		&emp.Salary,
 		&emp.JoiningDate,
 		&emp.EndingDate,
@@ -379,6 +393,18 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
 
 		if err == nil {
 			emp.ManagerName = &mName
+		}
+	}
+
+	// Fetch designation name if exists
+	if emp.DesignationID != nil {
+		var dName string
+		err := r.DB.QueryRow(`
+            SELECT designation_name FROM Tbl_Designation WHERE id = $1
+        `, emp.DesignationID).Scan(&dName)
+
+		if err == nil {
+			emp.DesignationName = &dName
 		}
 	}
 
@@ -422,7 +448,7 @@ func (r *Repository) GetEmployeesByManagerID(managerID uuid.UUID) ([]models.Empl
 	query := `
         SELECT 
             e.id, e.full_name, e.email, e.status,
-            r.type AS role, e.manager_id,
+            r.type AS role, e.manager_id, e.designation_id,
             e.salary, e.joining_date, e.ending_date,
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
@@ -449,6 +475,7 @@ func (r *Repository) GetEmployeesByManagerID(managerID uuid.UUID) ([]models.Empl
 			&emp.Status,
 			&emp.Role,
 			&emp.ManagerID,
+			&emp.DesignationID,
 			&emp.Salary,
 			&emp.JoiningDate,
 			&emp.EndingDate,
@@ -460,8 +487,97 @@ func (r *Repository) GetEmployeesByManagerID(managerID uuid.UUID) ([]models.Empl
 			return nil, err
 		}
 
+		// Fetch designation name if exists
+		if emp.DesignationID != nil {
+			var dName string
+			err := r.DB.QueryRow(`
+                SELECT designation_name FROM Tbl_Designation WHERE id = $1
+            `, emp.DesignationID).Scan(&dName)
+
+			if err == nil {
+				emp.DesignationName = &dName
+			}
+		}
+
 		employees = append(employees, emp)
 	}
 
 	return employees, nil
+}
+
+// ------------------ DESIGNATION OPERATIONS ------------------
+
+type Designation struct {
+	ID              uuid.UUID `json:"id" db:"id"`
+	DesignationName string    `json:"designation_name" db:"designation_name"`
+	Description     *string   `json:"description,omitempty" db:"description"`
+}
+
+// CreateDesignation inserts a new designation
+func (r *Repository) CreateDesignation(name string, description *string) (string, error) {
+	var id string
+	query := `
+		INSERT INTO Tbl_Designation (designation_name, description)
+		VALUES ($1, $2)
+		RETURNING id
+	`
+	err := r.DB.QueryRow(query, name, description).Scan(&id)
+	return id, err
+}
+
+// GetAllDesignations fetches all designations
+func (r *Repository) GetAllDesignations() ([]Designation, error) {
+	var designations []Designation
+	query := `
+		SELECT id, designation_name, description
+		FROM Tbl_Designation
+		ORDER BY designation_name
+	`
+	err := r.DB.Select(&designations, query)
+	return designations, err
+}
+
+// GetDesignationByID fetches a single designation by ID
+func (r *Repository) GetDesignationByID(id uuid.UUID) (*Designation, error) {
+	var designation Designation
+	query := `
+		SELECT id, designation_name, description
+		FROM Tbl_Designation
+		WHERE id = $1
+	`
+	err := r.DB.Get(&designation, query, id)
+	if err != nil {
+		return nil, err
+	}
+	return &designation, nil
+}
+
+// UpdateDesignation updates an existing designation
+func (r *Repository) UpdateDesignation(id uuid.UUID, name string, description *string) error {
+	query := `
+		UPDATE Tbl_Designation
+		SET designation_name = $1, description = $2
+		WHERE id = $3
+	`
+	_, err := r.DB.Exec(query, name, description, id)
+	return err
+}
+
+// DeleteDesignation deletes a designation by ID
+// Due to ON DELETE SET NULL constraint, employee designation_id will be set to NULL automatically
+func (r *Repository) DeleteDesignation(id uuid.UUID) error {
+	query := `DELETE FROM Tbl_Designation WHERE id = $1`
+	_, err := r.DB.Exec(query, id)
+	return err
+}
+
+// ------------------ UPDATE EMPLOYEE DESIGNATION ------------------
+func (r *Repository) UpdateEmployeeDesignation(empID uuid.UUID, designationID *uuid.UUID) error {
+	query := `
+		UPDATE Tbl_Employee
+		SET designation_id = $1, updated_at = NOW()
+		WHERE id = $2
+	`
+	_, err := r.DB.Exec(query, designationID, empID)
+	return err
 }
