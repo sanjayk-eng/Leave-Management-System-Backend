@@ -736,75 +736,90 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		return
 	}
 
-	// 2️⃣ Base Query - Explicitly select only the columns we need
-	baseQuery := `
-	SELECT 
-		l.id,
-		e.full_name AS employee,
-		lt.name AS leave_type,
-		l.start_date,
-		l.end_date,
-		l.days,
-		COALESCE(l.reason, '') AS reason,
-		l.status,
-		l.created_at AS applied_at
-	FROM Tbl_Leave l
-	INNER JOIN Tbl_Employee e ON l.employee_id = e.id
-	INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
-	`
+	// 2️⃣ Execute query based on role
+	var result []models.LeaveResponse
 
-	var (
-		conditions []string
-		args       []interface{}
-	)
-
-	// 3️⃣ Role-based conditions
 	switch role {
 	case "EMPLOYEE":
 		// Employees can only see their own leaves
-		conditions = append(conditions, "l.employee_id = $1")
-		args = append(args, userID)
+		query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		WHERE l.employee_id = $1
+		ORDER BY l.created_at DESC`
+
+		err = h.Query.DB.Select(&result, query, userID)
+
 	case "MANAGER":
 		// Manager can see: their own leaves + their team members' leaves
-		conditions = append(conditions, "(e.manager_id = $1 OR l.employee_id = $1)")
-		args = append(args, userID)
+		query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		WHERE (e.manager_id = $1 OR l.employee_id = $1)
+		ORDER BY l.created_at DESC`
+
+		err = h.Query.DB.Select(&result, query, userID)
+
 	case "ADMIN", "SUPERADMIN":
-		// Admin and SuperAdmin can see all leaves (no filter)
-		// No conditions added
+		// Admin and SuperAdmin can see all leaves
+		query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		ORDER BY l.created_at DESC`
+
+		err = h.Query.DB.Select(&result, query)
+
 	default:
 		utils.RespondWithError(c, http.StatusForbidden, "Invalid role: "+role)
 		return
 	}
 
-	// Apply conditions safely
-	query := baseQuery
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	query += " ORDER BY l.created_at DESC"
-
-	// 4️⃣ Execute query with proper error handling
-	var result []models.LeaveResponse
-
-	// Use Select instead of Queryx to avoid prepared statement issues
-	err = h.Query.DB.Select(&result, query, args...)
+	// 3️⃣ Handle query errors
 	if err != nil {
-		// Log the error for debugging
 		fmt.Printf("❌ GetAllLeaves DB Error: %v\n", err)
-		fmt.Printf("Query: %s\n", query)
-		fmt.Printf("Args: %v\n", args)
-
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch leaves: "+err.Error())
 		return
 	}
 
-	// 5️⃣ Handle empty result
+	// 4️⃣ Handle empty result
 	if result == nil {
 		result = []models.LeaveResponse{}
 	}
 
-	// 6️⃣ Return success with metadata
+	// 5️⃣ Return success with metadata
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Leaves fetched successfully",
 		"total":   len(result),
