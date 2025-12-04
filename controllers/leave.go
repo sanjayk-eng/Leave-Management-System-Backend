@@ -525,6 +525,10 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 			var leaveTypeName string
 			s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
 
+			// Fetch approver's full name
+			var approverName string
+			s.Query.DB.Get(&approverName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", approverID)
+
 			tx.Commit()
 
 			// Send final rejection notification
@@ -537,6 +541,7 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 						leave.StartDate.Format("2006-01-02"),
 						leave.EndDate.Format("2006-01-02"),
 						leave.Days,
+						approverName,
 					)
 				}()
 			}
@@ -620,6 +625,10 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 		var leaveTypeName string
 		s.Query.DB.Get(&leaveTypeName, "SELECT name FROM Tbl_Leave_type WHERE id=$1", leave.LeaveTypeID)
 
+		// Fetch approver's full name
+		var approverName string
+		s.Query.DB.Get(&approverName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", approverID)
+
 		tx.Commit()
 
 		// Send final approval notification
@@ -632,6 +641,7 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 					leave.StartDate.Format("2006-01-02"),
 					leave.EndDate.Format("2006-01-02"),
 					leave.Days,
+					approverName,
 				)
 			}()
 		}

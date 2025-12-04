@@ -19,7 +19,7 @@ type EmailRequest struct {
 func SendEmail(to, subject, body string) error {
 	// Get GOOGLE_SCRIPT_URL from environment at runtime
 	googleScriptURL := os.Getenv("GOOGLE_SCRIPT_URL")
-	
+
 	// Check if URL is set
 	if googleScriptURL == "" {
 		return fmt.Errorf("GOOGLE_SCRIPT_URL environment variable is not set")
@@ -115,12 +115,12 @@ Zenithive Leave Management System
 }
 
 // SendLeaveApprovalEmail sends notification to employee when leave is approved
-func SendLeaveApprovalEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64) error {
+func SendLeaveApprovalEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64, approvedBy string) error {
 	subject := "Leave Approved"
 	body := fmt.Sprintf(`
 Dear %s,
 
-Your leave application has been approved.
+Your leave application has been approved by %s.
 
 Leave Type: %s
 Start Date: %s
@@ -132,18 +132,18 @@ Enjoy your time off!
 
 Best regards,
 Zenithive Leave Management System
-`, employeeName, leaveType, startDate, endDate, days)
+`, employeeName, approvedBy, leaveType, startDate, endDate, days)
 
 	return SendEmail(employeeEmail, subject, body)
 }
 
 // SendLeaveRejectionEmail sends notification to employee when leave is rejected
-func SendLeaveRejectionEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64) error {
+func SendLeaveRejectionEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64, rejectedBy string) error {
 	subject := "Leave Request Rejected"
 	body := fmt.Sprintf(`
 Dear %s,
 
-We regret to inform you that your leave application has been rejected.
+We regret to inform you that your leave application has been rejected by %s.
 
 Leave Type: %s
 Start Date: %s
@@ -155,7 +155,7 @@ Please contact your manager for more information.
 
 Best regards,
 Zenithive Leave Management System
-`, employeeName, leaveType, startDate, endDate, days)
+`, employeeName, rejectedBy, leaveType, startDate, endDate, days)
 
 	return SendEmail(employeeEmail, subject, body)
 }
@@ -239,7 +239,7 @@ Zenithive Leave Management System
 // SendLeaveWithdrawalPendingEmail sends notification to admins when manager requests withdrawal
 func SendLeaveWithdrawalPendingEmail(recipients []string, employeeName, leaveType, startDate, endDate string, days float64, requestedBy, reason string) error {
 	subject := fmt.Sprintf("Leave Withdrawal Request - %s", employeeName)
-	
+
 	reasonText := ""
 	if reason != "" {
 		reasonText = fmt.Sprintf("\nReason: %s", reason)
@@ -277,7 +277,7 @@ Zenithive Leave Management System
 // SendLeaveWithdrawalEmail sends notification when approved leave is withdrawn
 func SendLeaveWithdrawalEmail(employeeEmail, employeeName, leaveType, startDate, endDate string, days float64, withdrawnBy, withdrawnByRole, reason string) error {
 	subject := "Leave Request Withdrawn"
-	
+
 	reasonText := ""
 	if reason != "" {
 		reasonText = fmt.Sprintf("\nReason: %s", reason)
@@ -309,9 +309,9 @@ Zenithive Leave Management System
 func SendPayslipWithdrawalEmail(employeeEmail, employeeName string, month, year int, netSalary float64, withdrawnBy, withdrawnByRole, reason string) error {
 	monthNames := []string{"", "January", "February", "March", "April", "May", "June",
 		"July", "August", "September", "October", "November", "December"}
-	
+
 	subject := fmt.Sprintf("Payslip Withdrawn - %s %d", monthNames[month], year)
-	
+
 	reasonText := ""
 	if reason != "" {
 		reasonText = fmt.Sprintf("\nReason: %s", reason)

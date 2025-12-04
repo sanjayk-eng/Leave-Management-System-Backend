@@ -10,9 +10,9 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
-    # ✅ Set environment variable at job level
     env:
       RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
     # 1️⃣ Checkout code
@@ -39,7 +39,7 @@ jobs:
     - name: Build App
       run: go build -o ums-backend main.go
 
-    # 6️⃣ Verify Build
+    # 6️⃣ Ensure Build Output
     - name: Verify Build
       run: |
         if [ -f "ums-backend" ]; then
@@ -50,24 +50,40 @@ jobs:
           exit 1
         fi
 
- 
+    # 7️⃣ Build Docker Image
+    - name: Build Docker Image
+      run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/ums-backend:latest .
+
+    # 8️⃣ Login to DockerHub
+    - name: DockerHub Login
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # 9️⃣ Push Docker Image
+    - name: Push Docker Image
+      run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/ums-backend:latest
+
+    # 🔟 Deploy Render Service
     - name: Deploy to Render
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
         if [ -z "$RENDER_DEPLOY_HOOK" ]; then
           echo "❌ RENDER_DEPLOY_HOOK secret not configured. Deployment aborted."
           exit 1
-        else
-          echo "🚀 Triggering manual deploy via webhook..."
-          curl -X POST "$RENDER_DEPLOY_HOOK"
-          echo "✅ Deploy request sent!"
         fi
 
-    # 8️⃣ Deployment Info
+        echo "🚀 Triggering Render Deployment..."
+        curl -X POST "$RENDER_DEPLOY_HOOK"
+        echo "🎯 Deploy triggered successfully!"
+
+    # 1️⃣1️⃣ Done!
     - name: Deployment Info
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✅ Build & Deployment pipeline completed!"
-        echo "🔍 Check deployment status at: https://dashboard.render.com/"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🎉 CI/CD Pipeline Completed"
+        echo "🐳 Docker → Image Published"
+        echo "☁️ Render → Deploy Triggered"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
