@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,12 +23,13 @@ func (h *HandlerFunc) GetCompanySettings(c *gin.Context) {
 		return
 	}
 	var settings models.CompanySettings
-	err := h.Query.GetCompanySettings(settings)
+	err := h.Query.GetCompanySettings(&settings)
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to fetch settings: "+err.Error())
+		fmt.Println("error", err.Error())
 		return
 	}
-
+	fmt.Println("setting", settings)
 	c.JSON(http.StatusOK, gin.H{
 		"settings": settings,
 	})

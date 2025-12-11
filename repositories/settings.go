@@ -5,7 +5,7 @@ import (
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 )
 
-func (r *Repository) GetCompanySettings(settings models.CompanySettings) error {
+func (r *Repository) GetCompanySettings(settings *models.CompanySettings) error {
 
 	err := r.DB.Get(&settings, `SELECT * FROM Tbl_Company_Settings LIMIT 1`)
 	if err != nil {
