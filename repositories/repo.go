@@ -282,13 +282,13 @@ func (r *Repository) UpdateManager(empID, managerID uuid.UUID) error {
 }
 
 // AddHoliday inserts a holiday into the database
-func (r *Repository) AddHoliday(name string, date time.Time, typ string) (string, error) {
+func (r *Repository) AddHoliday(tx *sqlx.Tx, name string, date time.Time, typ string) (string, error) {
 	if typ == "" {
 		typ = "HOLIDAY"
 	}
 	day := date.Weekday().String()
 	var id string
-	err := r.DB.QueryRow(`
+	err := tx.QueryRow(`
 		INSERT INTO Tbl_Holiday (name, date, day, type, created_at)
 		VALUES ($1, $2, $3, $4, NOW())
 		RETURNING id
@@ -317,8 +317,8 @@ func (r *Repository) GetAllHolidays() ([]models.Holiday, error) {
 }
 
 // DeleteHoliday deletes a holiday by ID
-func (r *Repository) DeleteHoliday(id string) error {
-	_, err := r.DB.Exec(`DELETE FROM Tbl_Holiday WHERE id=$1`, id)
+func (r *Repository) DeleteHoliday(id string, tx *sqlx.Tx) error {
+	_, err := tx.Exec(`DELETE FROM Tbl_Holiday WHERE id=$1`, id)
 	return err
 }
 

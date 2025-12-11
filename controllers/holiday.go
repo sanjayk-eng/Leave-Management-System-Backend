@@ -5,7 +5,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/common"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
 )
 
 // AddHoliday handles adding a new holiday
@@ -13,6 +17,23 @@ func (s *HandlerFunc) AddHoliday(c *gin.Context) {
 	role, _ := c.Get("role")
 	if role.(string) != "SUPERADMIN" {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
+		return
+	}
+	empIDRaw, ok := c.Get("user_id")
+	if !ok {
+		utils.RespondWithError(c, http.StatusUnauthorized, "Employee ID missing")
+		return
+	}
+
+	empIDStr, ok := empIDRaw.(string)
+	if !ok {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Invalid employee ID format")
+		return
+	}
+
+	empID, err := uuid.Parse(empIDStr)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Invalid employee UUID")
 		return
 	}
 
@@ -35,16 +56,30 @@ func (s *HandlerFunc) AddHoliday(c *gin.Context) {
 		0, 0, 0, 0,
 		time.UTC,
 	)
+	var holidayId string
 
-	id, err := s.Query.AddHoliday(input.Name, normalizedDate, input.Type)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to add holiday: "+err.Error())
-		return
-	}
+	err = common.ExecuteTransaction(c, s.Query.DB, func(tx *sqlx.Tx) error {
+		id, err := s.Query.AddHoliday(tx, input.Name, normalizedDate, input.Type)
+		if err != nil {
+			// utils.RespondWithError(c, http.StatusInternalServerError, "Failed to add holiday: "+err.Error())
+			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to add holiday: "+err.Error())
+		}
+		holidayId = id
+		data := utils.NewCommon(constant.ComponentHoliday, constant.ActionCreate, empID)
+
+		err = common.AddLog(data, tx)
+		if err != nil {
+			// utils.RespondWithError(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
+			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
+		}
+
+		return err
+	})
 
 	c.JSON(http.StatusOK, gin.H{
+		"error":   err,
 		"message": "Holiday added successfully",
-		"id":      id,
+		"id":      holidayId,
 		"date":    normalizedDate.Format("2006-01-02"),
 	})
 }
@@ -80,13 +115,43 @@ func (s *HandlerFunc) DeleteHoliday(c *gin.Context) {
 		return
 	}
 
-	err := s.Query.DeleteHoliday(id)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to delete holiday: "+err.Error())
-		return
-	}
+	err := common.ExecuteTransaction(c, s.Query.DB, func(tx *sqlx.Tx) error {
+		err := s.Query.DeleteHoliday(id, tx)
+		if err != nil {
+			utils.RespondWithError(c, http.StatusInternalServerError, "Failed to delete holiday: "+err.Error())
+			return err
+		}
+
+		//add log
+		empIDRaw, ok := c.Get("user_id")
+		if !ok {
+			utils.RespondWithError(c, http.StatusUnauthorized, "Employee ID missing")
+			return err
+		}
+
+		empIDStr, ok := empIDRaw.(string)
+		if !ok {
+			utils.RespondWithError(c, http.StatusInternalServerError, "Invalid employee ID format")
+			return err
+		}
+
+		empID, err := uuid.Parse(empIDStr)
+		if err != nil {
+			utils.RespondWithError(c, http.StatusInternalServerError, "Invalid employee UUID")
+			return err
+		}
+		data := utils.NewCommon(constant.ComponentHoliday, constant.ActionDelete, empID)
+
+		err = common.AddLog(data, tx)
+		if err != nil {
+			utils.RespondWithError(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
+			return err
+		}
+		return err
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Holiday deleted successfully",
+		"error":   err.Error(),
 	})
 }
