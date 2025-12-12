@@ -297,7 +297,8 @@ type Leave struct {
 // AdminAddLeave - POST /api/leaves/admin-add
 
 func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
-	// Extract Employee Info from Middleware
+
+	// Extract Employee Info
 	empIDRaw, ok := c.Get("user_id")
 	if !ok {
 		utils.RespondWithError(c, http.StatusUnauthorized, "Employee ID missing")
@@ -327,7 +328,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	// Bind Input JSON
+	// Bind Input
 	var input models.LeaveInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, "Invalid input: "+err.Error())
@@ -337,12 +338,8 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 
 	// Validate Reason
 	input.Reason = strings.TrimSpace(input.Reason)
-	if input.Reason == "" {
-		utils.RespondWithError(c, 400, "Leave reason is required. Please provide a valid reason for your leave request")
-		return
-	}
 	if len(input.Reason) < 10 {
-		utils.RespondWithError(c, 400, "Leave reason must be at least 10 characters long. Please provide a detailed reason")
+		utils.RespondWithError(c, 400, "Leave reason must be at least 10 characters long")
 		return
 	}
 	if len(input.Reason) > 500 {
@@ -361,12 +358,13 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	//decreade variable
-	//var leave string
+	// Final Leave ID to return
 	var leaveID uuid.UUID
 
+	// Execute Transaction
 	err = common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
-		//calculate Leave Days
+
+		// Working days
 		leaveDays, err := service.CalculateWorkingDays(tx, input.StartDate, input.EndDate)
 		if err != nil {
 			return utils.CustomErr(c, 500, "Failed to calculate leave days: "+err.Error())
@@ -375,33 +373,36 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 			return utils.CustomErr(c, 400, "Leave days must be greater than 0")
 		}
 		input.Days = &leaveDays
-		// Validate Leave Type
+
+		// Leave Type
 		leaveType, err := h.Query.GetLeaveTypeById(tx, input.LeaveTypeID)
 		if err == sql.ErrNoRows {
-			return utils.CustomErr(c, 400, "Invalid leave type "+err.Error())
+			return utils.CustomErr(c, 400, "Invalid leave type")
 		}
 		if err != nil {
-			return utils.CustomErr(c, 500, "Failed to fetch leave type "+err.Error())
+			return utils.CustomErr(c, 500, "Failed to fetch leave type: "+err.Error())
 		}
-		// Get/Create Leave Balance
+
+		// Leave Balance
 		balance, err := h.Query.GetLeaveBalance(tx, employeeID, input.LeaveTypeID)
 		if err == sql.ErrNoRows {
 			balance = float64(leaveType.DefaultEntitlement)
 			if err := h.Query.CreateLeaveBalance(tx, employeeID, input.LeaveTypeID, leaveType.DefaultEntitlement); err != nil {
-				return utils.CustomErr(c, 500, "Failed to create leave balance "+err.Error())
+				return utils.CustomErr(c, 500, "Failed to create leave balance: "+err.Error())
 			}
 		} else if err != nil {
-			return utils.CustomErr(c, 500, "Failed to fetch leave balance "+err.Error())
+			return utils.CustomErr(c, 500, "Failed to fetch leave balance: "+err.Error())
 		}
 
-		// Check Enough Leaves
+		// Check balance
 		if balance < leaveDays {
 			return utils.CustomErr(c, 400, "Insufficient leave balance")
 		}
-		// Overlapping Leave Check
+
+		// Overlapping Leave
 		overlaps, err := h.Query.GetOverlappingLeaves(tx, employeeID, input.StartDate, input.EndDate)
 		if err != nil {
-			return utils.CustomErr(c, 500, "Failed to check overlapping leave "+err.Error())
+			return utils.CustomErr(c, 500, "Failed to check overlapping leave")
 		}
 		if len(overlaps) > 0 {
 			ov := overlaps[0]
@@ -413,62 +414,34 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 				ov.Status,
 			))
 		}
+
 		// Insert Leave
-		leaveId, err := h.Query.InsertLeave(tx, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays, input.Reason)
+		id, err := h.Query.InsertLeave(tx, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays, input.Reason)
 		if err != nil {
 			return utils.CustomErr(c, 500, "Failed to apply leave: "+err.Error())
 		}
-		leaveID = leaveId
+		leaveID = id
 
-		// Add logs
-		var data *utils.Common
-		data.Component = constant.ComponentLeave
-		data.Action = constant.ActionCreate
-		data.FromUserID = employeeID
-		if err := common.AddLog(data, tx); err != nil {
-			fmt.Println("failed", err.Error())
-			return utils.CustomErr(c, 500, "Failed to create leave log : "+err.Error())
+		// Log Entry
+		data := &utils.Common{
+			Component:  constant.ComponentLeave,
+			Action:     constant.ActionCreate,
+			FromUserID: employeeID,
 		}
-		// Send notification async
-		go func() {
-			leaveType, _ := h.Query.GetLeaveTypeById(tx, input.LeaveTypeID)
+		if err := common.AddLog(data, tx); err != nil {
+			return utils.CustomErr(c, 500, "Failed to create leave log: "+err.Error())
+		}
 
-			recipients, err := h.Query.GetAdminAndEmployeeEmail(employeeID)
-			if err != nil {
-				fmt.Printf("Failed to get notification recipients: %v\n", err)
-				return
-			}
-
-			empDetails, err := h.Query.GetEmployeeDetailsForNotification(employeeID)
-			if err != nil {
-				fmt.Printf("Failed to get employee details for notification: %v\n", err)
-				return
-			}
-
-			if len(recipients) > 0 {
-				if err := utils.SendLeaveApplicationEmail(
-					recipients,
-					empDetails.FullName,
-					leaveType.Name,
-					input.StartDate.Format("2006-01-02"),
-					input.EndDate.Format("2006-01-02"),
-					*input.Days,
-					input.Reason,
-				); err != nil {
-					fmt.Printf("Failed to send leave application email: %v\n", err)
-				}
-			}
-		}()
-		return nil
+		return nil // IMPORTANT FIX
 	})
 
+	// If transaction returned an error, stop (CustomErr already responded)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		utils.RespondWithError(c, 500, "Failed to update settings: "+err.Error())
+		return
 	}
 
-	// Response
+	// Send response
 	c.JSON(200, gin.H{
 		"message":  "Leave applied successfully",
 		"leave_id": leaveID,
