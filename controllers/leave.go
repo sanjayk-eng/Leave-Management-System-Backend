@@ -13,6 +13,8 @@ import (
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/service"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/common"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
 )
 
 type Leave struct {
@@ -359,89 +361,78 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	// Start Transaction
-	tx, err := h.Query.DB.Beginx()
-	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to start transaction")
-		return
-	}
-	defer func() {
+	//decreade variable
+	//var leave string
+	var leaveID uuid.UUID
+
+	if err := common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
+		//calculate Leave Days
+		leaveDays, err := service.CalculateWorkingDays(tx, input.StartDate, input.EndDate)
 		if err != nil {
-			tx.Rollback()
+			return utils.CustomErr(c, 500, "Failed to calculate leave days: "+err.Error())
 		}
-	}()
-
-	// Calculate Working Days
-	leaveDays, err := service.CalculateWorkingDays(tx, input.StartDate, input.EndDate)
-	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to calculate leave days: "+err.Error())
-		return
-	}
-	if leaveDays <= 0 {
-		utils.RespondWithError(c, 400, "Leave days must be greater than 0")
-		return
-	}
-	input.Days = &leaveDays
-
-	// Validate Leave Type
-	leaveType, err := h.Query.GetLeaveTypeById(input.LeaveTypeID)
-	if err == sql.ErrNoRows {
-		utils.RespondWithError(c, 400, "Invalid leave type")
-		return
-	}
-	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to fetch leave type")
-		return
-	}
-
-	// Get/Create Leave Balance
-	balance, err := h.Query.GetLeaveBalance(tx, employeeID, input.LeaveTypeID)
-	if err == sql.ErrNoRows {
-		balance = float64(leaveType.DefaultEntitlement)
-		if err := h.Query.CreateLeaveBalance(tx, employeeID, input.LeaveTypeID, leaveType.DefaultEntitlement); err != nil {
-			utils.RespondWithError(c, 500, "Failed to create leave balance")
-			return
+		if leaveDays <= 0 {
+			return utils.CustomErr(c, 400, "Leave days must be greater than 0")
 		}
-	} else if err != nil {
-		utils.RespondWithError(c, 500, "Failed to fetch leave balance")
-		return
-	}
+		input.Days = &leaveDays
+		// Validate Leave Type
+		leaveType, err := h.Query.GetLeaveTypeById(input.LeaveTypeID)
+		if err == sql.ErrNoRows {
+			return utils.CustomErr(c, 400, "Invalid leave type")
+		}
+		if err != nil {
+			return utils.CustomErr(c, 500, "Failed to fetch leave type")
+		}
+		// Get/Create Leave Balance
+		balance, err := h.Query.GetLeaveBalance(tx, employeeID, input.LeaveTypeID)
+		if err == sql.ErrNoRows {
+			balance = float64(leaveType.DefaultEntitlement)
+			if err := h.Query.CreateLeaveBalance(tx, employeeID, input.LeaveTypeID, leaveType.DefaultEntitlement); err != nil {
+				return utils.CustomErr(c, 500, "Failed to create leave balance")
+			}
+		} else if err != nil {
+			return utils.CustomErr(c, 500, "Failed to fetch leave balance")
+		}
 
-	// Check Enough Leaves
-	if balance < leaveDays {
-		utils.RespondWithError(c, 400, "Insufficient leave balance")
-		return
-	}
+		// Check Enough Leaves
+		if balance < leaveDays {
+			return utils.CustomErr(c, 400, "Insufficient leave balance")
+		}
+		// Overlapping Leave Check
+		overlaps, err := h.Query.GetOverlappingLeaves(tx, employeeID, input.StartDate, input.EndDate)
+		if err != nil {
+			return utils.CustomErr(c, 500, "Failed to check overlapping leave")
+		}
+		if len(overlaps) > 0 {
+			ov := overlaps[0]
+			return utils.CustomErr(c, 400, fmt.Sprintf(
+				"Overlapping leave exists: %s from %s to %s (Status: %s). Please cancel or modify the existing leave first",
+				ov.LeaveType,
+				ov.StartDate.Format("2006-01-02"),
+				ov.EndDate.Format("2006-01-02"),
+				ov.Status,
+			))
+		}
+		// Insert Leave
+		leaveId, err := h.Query.InsertLeave(tx, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays, input.Reason)
+		if err != nil {
+			return utils.CustomErr(c, 500, "Failed to apply leave: "+err.Error())
+		}
+		leaveID = leaveId
 
-	// Overlapping Leave Check
-	overlaps, err := h.Query.GetOverlappingLeaves(tx, employeeID, input.StartDate, input.EndDate)
-	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to check overlapping leave")
-		return
-	}
-	if len(overlaps) > 0 {
-		ov := overlaps[0]
-		utils.RespondWithError(c, 400, fmt.Sprintf(
-			"Overlapping leave exists: %s from %s to %s (Status: %s). Please cancel or modify the existing leave first",
-			ov.LeaveType,
-			ov.StartDate.Format("2006-01-02"),
-			ov.EndDate.Format("2006-01-02"),
-			ov.Status,
-		))
-		return
-	}
-
-	// Insert Leave
-	leaveID, err := h.Query.InsertLeave(tx, employeeID, input.LeaveTypeID, input.StartDate, input.EndDate, leaveDays, input.Reason)
-	if err != nil {
-		utils.RespondWithError(c, 500, "Failed to apply leave: "+err.Error())
-		return
-	}
-
-	// Commit Transaction
-	if err = tx.Commit(); err != nil {
-		utils.RespondWithError(c, 500, "Failed to commit transaction")
-		return
+		// Add logs
+		var data *utils.Common
+		data.Component = constant.ComponentLeave
+		data.Action = constant.ActionCreate
+		data.FromUserID = employeeID
+		if err := common.AddLog(data, tx); err != nil {
+			return utils.CustomErr(c, 500, "Failed to create leave log : "+err.Error())
+		}
+		return err
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
 	}
 
 	// Send notification async
@@ -467,7 +458,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 				leaveType.Name,
 				input.StartDate.Format("2006-01-02"),
 				input.EndDate.Format("2006-01-02"),
-				leaveDays,
+				*input.Days,
 				input.Reason,
 			); err != nil {
 				fmt.Printf("Failed to send leave application email: %v\n", err)
@@ -479,7 +470,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"message":  "Leave applied successfully",
 		"leave_id": leaveID,
-		"days":     leaveDays,
+		"days":     input.Days,
 		"reason":   input.Reason,
 	})
 }
