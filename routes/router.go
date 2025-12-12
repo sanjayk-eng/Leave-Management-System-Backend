@@ -115,4 +115,9 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 		designations.PATCH("/:id", h.UpdateDesignation)  // Update designation (ADMIN, SUPERADMIN, HR)
 		designations.DELETE("/:id", h.DeleteDesignation) // Delete designation (ADMIN, SUPERADMIN, HR)
 	}
+	logs := r.Group("/api/logs")
+	logs.Use((middleware.AuthMiddleware(h)))
+	{
+		logs.GET("/", h.GetLogs) // Get logs filtered by days (SUPERADMIN only)
+	}
 }

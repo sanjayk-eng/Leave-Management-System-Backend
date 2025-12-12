@@ -195,3 +195,12 @@ type CompanyField struct {
 	WorkingDaysPerMonth  int  `json:"working_days_per_month" binding:"required"`
 	AllowManagerAddLeave bool `json:"allow_manager_add_leave"`
 }
+
+// ----------------- LOG -----------------
+type LogResponse struct {
+	ID        int       `json:"id" db:"id"`
+	UserName  string    `json:"user_name" db:"user_name"`
+	Action    string    `json:"action" db:"action"`
+	Component string    `json:"component" db:"component"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
