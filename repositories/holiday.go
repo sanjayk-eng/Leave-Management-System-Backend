@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 )
@@ -50,17 +49,13 @@ func (r *Repository) DeleteHoliday(id string, tx *sqlx.Tx) error {
 	return err
 }
 
-func (q *Repository) GetLeaveTypeByLeaveID(leaveID uuid.UUID) (int, error) {
-	var leaveTypeID int
-	err := q.DB.Get(&leaveTypeID, `
-        SELECT leave_type_id 
-        FROM Tbl_Leave 
-        WHERE id = $1
-    `, leaveID)
+//
 
-	if err != nil {
-		return 0, err
-	}
-
-	return leaveTypeID, nil
+func (q *Repository) GetByFilterHolidayBetwweenTwoDates(tx *sqlx.Tx, start time.Time, end time.Time) ([]time.Time, error) {
+	var holidays []time.Time
+	query := `SELECT date FROM Tbl_Holiday 
+         WHERE date BETWEEN $1 AND $2`
+	err := tx.Select(&holidays, query,
+		start, end)
+	return holidays, err
 }

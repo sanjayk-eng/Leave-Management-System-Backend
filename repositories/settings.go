@@ -24,5 +24,4 @@ func (r *Repository) UpdateCompanySettings(tx *sqlx.Tx, input models.CompanyFiel
 		return err
 	}
 	return nil
-
 }

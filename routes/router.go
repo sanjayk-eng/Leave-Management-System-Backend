@@ -48,7 +48,6 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	leaves.Use(middleware.AuthMiddleware(h))
 	{
 		leaves.POST("/apply", h.ApplyLeave)                        // Employee applies for leave
-		leaves.POST("/admin-add", h.AdminAddLeave)                 // Admin/Manager adds leave on behalf of employee
 		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy)    // Admin creates leave policy
 		leaves.GET("/Get-All-Leave-Policy", h.GetAllLeavePolicies) // Get all leave policies
 		leaves.GET("/manager/history", h.GetManagerLeaveHistory)   // Manager gets team leave history
@@ -56,6 +55,9 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 		leaves.DELETE("/:id/cancel", h.CancelLeave)                // Cancel pending leave (Employee/Admin)
 		leaves.POST("/:id/withdraw", h.WithdrawLeave)              // Withdraw approved leave (Admin/Manager)
 		leaves.GET("/all", h.GetAllLeaves)                         // Get all leaves (filtered by role)
+		leaves.GET("/:id", h.GetLeaveByID)                         // Get leave by ID (role-based access)
+		leaves.GET("/timming", h.GetLeaveTiming)                   // Get all Leave Timing
+		leaves.PUT("/timming/:id", h.UpdateLeaveTiming)            // Update leave timing by super admin and admin
 	}
 
 	// ----------------- Leave Balances -----------------
@@ -85,9 +87,6 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 		payroll.GET("/payslips/:id/pdf", h.GetPayslipPDF)
 		// GET /api/payroll/payslips/{id}/pdf
 
-		// Withdraw payslip (two-level approval: Manager → Admin)
-		payroll.POST("/payslips/:id/withdraw", h.WithdrawPayslip)
-		// POST /api/payroll/payslips/{id}/withdraw
 	}
 
 	// ----------------- Settings -----------------

@@ -52,15 +52,16 @@ type LeaveTypeInput struct {
 
 // ----------------- LEAVE -----------------
 type LeaveInput struct {
-	EmployeeID   uuid.UUID  `json:"employee_id" validate:"required"`
-	LeaveTypeID  int        `json:"leave_type_id" validate:"required"`
-	StartDate    time.Time  `json:"start_date" validate:"required"`
-	EndDate      time.Time  `json:"end_date" validate:"required"`
-	Reason       string     `json:"reason" validate:"required,min=10,max=500"` // Enhanced validation
-	Days         *float64   `json:"days,omitempty"`
-	Status       string     `json:"status,omitempty"`
-	AppliedByID  *uuid.UUID `json:"applied_by,omitempty"`
-	ApprovedByID *uuid.UUID `json:"approved_by,omitempty"`
+	EmployeeID    uuid.UUID  `json:"employee_id" validate:"required"`
+	LeaveTypeID   int        `json:"leave_type_id" validate:"required"`
+	LeaveTimingID *int       `json:"leave_timing_id,omitempty"` // Optional timing ID (defaults to 3 - Full Day)
+	StartDate     time.Time  `json:"start_date" validate:"required"`
+	EndDate       time.Time  `json:"end_date" validate:"required"`
+	Reason        string     `json:"reason" validate:"required,min=10,max=500"` // Enhanced validation
+	Days          *float64   `json:"days,omitempty"`
+	Status        string     `json:"status,omitempty"`
+	AppliedByID   *uuid.UUID `json:"applied_by,omitempty"`
+	ApprovedByID  *uuid.UUID `json:"approved_by,omitempty"`
 }
 
 // ----------------- LEAVE BALANCE -----------------
@@ -97,7 +98,7 @@ type PayslipInput struct {
 	EmployeeID      uuid.UUID `json:"employee_id" validate:"required"`
 	BasicSalary     *float64  `json:"basic_salary,omitempty"`
 	WorkingDays     *int      `json:"working_days,omitempty"`
-	AbsentDays      *int      `json:"absent_days,omitempty"`
+	AbsentDays      *float64  `json:"absent_days,omitempty"`
 	DeductionAmount *float64  `json:"deduction_amount,omitempty"`
 	NetSalary       *float64  `json:"net_salary,omitempty"`
 	PdfPath         *string   `json:"pdf_path,omitempty"`
@@ -145,7 +146,7 @@ type FullPayslipResponse struct {
 	Year            int       `json:"year"`
 	BasicSalary     float64   `json:"basic_salary"`
 	WorkingDays     int       `json:"working_days"`
-	AbsentDays      int       `json:"absent_days"`
+	AbsentDays      float64   `json:"absent_days"`
 	DeductionAmount float64   `json:"deduction_amount"`
 	NetSalary       float64   `json:"net_salary"`
 	PDFPath         string    `json:"pdf_path"`
@@ -153,15 +154,18 @@ type FullPayslipResponse struct {
 	CreatedAt       string    `json:"created_at"`
 }
 type LeaveResponse struct {
-	ID        uuid.UUID `db:"id" json:"id"`
-	Employee  string    `db:"employee" json:"employee"`
-	LeaveType string    `db:"leave_type" json:"leave_type"`
-	StartDate time.Time `db:"start_date" json:"start_date"`
-	EndDate   time.Time `db:"end_date" json:"end_date"`
-	Days      float64   `db:"days" json:"days"`
-	Reason    string    `db:"reason" json:"reason"`
-	Status    string    `db:"status" json:"status"`
-	AppliedAt time.Time `db:"applied_at" json:"applied_at"`
+	ID              uuid.UUID `db:"id" json:"id"`
+	Employee        string    `db:"employee" json:"employee"`
+	LeaveType       string    `db:"leave_type" json:"leave_type"`
+	IsPaid          bool      `db:"is_paid" json:"is_paid"`
+	LeaveTimingType string    `db:"leave_timing_type" json:"leave_timing_type"`
+	LeaveTiming     string    `db:"leave_timing" json:"leave_timing"`
+	StartDate       time.Time `db:"start_date" json:"start_date"`
+	EndDate         time.Time `db:"end_date" json:"end_date"`
+	Days            float64   `db:"days" json:"days"`
+	Reason          string    `db:"reason" json:"reason"`
+	Status          string    `db:"status" json:"status"`
+	AppliedAt       time.Time `db:"applied_at" json:"applied_at"`
 }
 
 var Validate *validator.Validate
@@ -203,4 +207,37 @@ type LogResponse struct {
 	Action    string    `json:"action" db:"action"`
 	Component string    `json:"component" db:"component"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+type Leave struct {
+	ID            uuid.UUID  `db:"id"`
+	EmployeeID    uuid.UUID  `db:"employee_id"`
+	LeaveTypeID   int        `db:"leave_type_id"`
+	LeaveTimingID *int       `db:"half_id"` // Timing ID (references Tbl_Half)
+	StartDate     time.Time  `db:"start_date"`
+	EndDate       time.Time  `db:"end_date"`
+	Days          float64    `db:"days"`
+	Status        string     `db:"status"`
+	AppliedByID   *uuid.UUID `db:"applied_by"`
+	ApprovedByID  *uuid.UUID `db:"approved_by"`
+	Reason        string     `db:"reason"`
+	CreatedAt     time.Time  `db:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at"`
+}
+
+// Leave Timing
+type LeaveTimingResponse struct {
+	ID        int        `json:"id" db:"id"`
+	Type      string     `json:"type" db:"type"`
+	Timing    string     `json:"timing" db:"timing"`
+	CreatedAt *time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt *time.Time `json:"updated_at" db:"updated_at"`
+}
+type UpdateLeaveTimingReq struct {
+	ID     int    `uri:"id" validate:"required,oneof=1 2 3"`
+	Timing string `json:"timing" validate:"required"`
+}
+
+type GetLeaveTimingByIDReq struct {
+	ID int `uri:"id" validate:"required,oneof=1 2 3"`
 }

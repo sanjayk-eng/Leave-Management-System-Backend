@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,21 @@ func (r *Repository) GetLeaveTypeById(leaveTypeID int) (models.LeaveType, error)
 		leaveTypeID,
 	)
 	return leaves, err
+}
+
+func (q *Repository) GetLeaveTypeByLeaveID(leaveID uuid.UUID) (int, error) {
+	var leaveTypeID int
+	err := q.DB.Get(&leaveTypeID, `
+        SELECT leave_type_id 
+        FROM Tbl_Leave 
+        WHERE id = $1
+    `, leaveID)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return leaveTypeID, nil
 }
 
 func (r *Repository) GetAllLeaveType() ([]models.LeaveType, error) {
@@ -111,6 +127,7 @@ func (r *Repository) InsertLeave(
 	tx *sqlx.Tx,
 	employeeID uuid.UUID,
 	leaveTypeID int,
+	leaveTimingID int,
 	startDate, endDate time.Time,
 	days float64,
 	reason string,
@@ -120,12 +137,13 @@ func (r *Repository) InsertLeave(
 
 	err := tx.QueryRow(`
 		INSERT INTO Tbl_Leave 
-		(employee_id, leave_type_id, start_date, end_date, days, status, reason)
-		VALUES ($1,$2,$3,$4,$5,'Pending',$6)
+		(employee_id, leave_type_id, half_id, start_date, end_date, days, status, reason)
+		VALUES ($1,$2,$3,$4,$5,$6,'Pending',$7)
 		RETURNING id
 	`,
 		employeeID,
 		leaveTypeID,
+		leaveTimingID,
 		startDate,
 		endDate,
 		days,
@@ -133,4 +151,70 @@ func (r *Repository) InsertLeave(
 	).Scan(&leaveID)
 
 	return leaveID, err
+}
+
+func (r *Repository) GetLeaveById(tx *sqlx.Tx, leaveID uuid.UUID) (models.Leave, error) {
+	var leave models.Leave
+	query := `SELECT * FROM Tbl_Leave WHERE id=$1 FOR UPDATE`
+	err := tx.Get(&leave, query, leaveID)
+	return leave, err
+}
+
+// Get All Leave Timming
+// Get All Leave Timing
+func (r *Repository) GetLeaveTiming() ([]models.LeaveTimingResponse, error) {
+	var data []models.LeaveTimingResponse
+	query := `
+		SELECT id, type, timing, created_at, updated_at
+		FROM Tbl_Half
+		ORDER BY id
+	`
+	err := r.DB.Select(&data, query)
+
+	return data, err
+}
+
+// Get Leave Timing By ID
+func (r *Repository) GetLeaveTimingByID(id int) (*models.LeaveTimingResponse, error) {
+	var data models.LeaveTimingResponse
+
+	query := `
+		SELECT *
+		FROM Tbl_Half
+		WHERE id = $1
+	`
+
+	err := r.DB.Get(&data, query, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, err
+		}
+		return nil, err
+	}
+	return &data, nil
+}
+
+func (r *Repository) UpdateLeaveTiming(tx *sqlx.Tx, id int, timing string) error {
+	query := `
+		UPDATE Tbl_Half
+		SET timing = $1,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+	`
+
+	res, err := tx.Exec(query, timing, id)
+	if err != nil {
+		return err
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }
