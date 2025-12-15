@@ -122,7 +122,7 @@ func (r *Repository) GetEquipmentByCategory(categoryID uuid.UUID) ([]models.Equi
 	equipments := make([]models.EquipmentRes, 0)
 
 	query := `
-		SELECT *
+		SELECT id, name, category_id, ownership, is_shared, total_quantity, created_at, updated_at
 		FROM tbl_equipment
 		WHERE category_id = $1
 		ORDER BY name ASC
@@ -144,7 +144,7 @@ func (r *Repository) GetAllEquipment() ([]models.EquipmentRes, error) {
 	equipments := make([]models.EquipmentRes, 0)
 
 	query := `
-		SELECT *
+		SELECT id, name, category_id, ownership, is_shared, total_quantity, created_at, updated_at
 		FROM tbl_equipment
 		ORDER BY name ASC
 	`

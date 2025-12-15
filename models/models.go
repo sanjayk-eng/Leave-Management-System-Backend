@@ -154,7 +154,7 @@ type FullPayslipResponse struct {
 	CreatedAt       string    `json:"created_at"`
 }
 type LeaveResponse struct {
-	ID              uuid.UUID `db:"id" json:"id"`
+	ID              string    `db:"id" json:"id"`
 	Employee        string    `db:"employee" json:"employee"`
 	LeaveType       string    `db:"leave_type" json:"leave_type"`
 	IsPaid          bool      `db:"is_paid" json:"is_paid"`
@@ -249,7 +249,7 @@ type EquipmentCategoryRequest struct {
 	Description *string `json:"description,omitempty" validate:"omitempty,max=255"`
 }
 type EquipmentCategoryRes struct {
-	ID          *string   `db:"id" json:"id,omitempty" validate:"omitempty,uuid4"`
+	ID          string    `db:"id" json:"id"`
 	Name        string    `db:"name" json:"name" validate:"required,min=2,max=50"`
 	Description string    `db:"description" json:"description,omitempty" validate:"omitempty,max=255"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
@@ -266,7 +266,7 @@ type EquipmentRequest struct {
 }
 
 type EquipmentRes struct {
-	ID            *string   `db:"id" json:"id,omitempty"`
+	ID            string    `db:"id" json:"id"`
 	Name          string    `db:"name" json:"name"`
 	CategoryID    string    `db:"category_id" json:"category_id"`
 	Ownership     string    `db:"ownership" json:"ownership"`
