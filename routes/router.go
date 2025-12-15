@@ -12,7 +12,7 @@ import (
 func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"zenithiveapp.netlify.app"},
+		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Authorization", "token"},
