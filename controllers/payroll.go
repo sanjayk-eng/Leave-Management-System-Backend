@@ -46,7 +46,7 @@ func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 	}
 
 	now := time.Now()
-	if input.Year > now.Year() || (input.Year == now.Year() && input.Month > int(now.Month())) {
+	if input.Year > now.Year() || (input.Year == now.Year() && input.Month >= int(now.Month())) {
 		utils.RespondWithError(c, http.StatusBadRequest, "Cannot run payroll for future months")
 		return
 	}
