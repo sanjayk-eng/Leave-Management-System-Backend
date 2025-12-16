@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -53,7 +54,7 @@ func (h *HandlerFunc) CreateCategory(c *gin.Context) {
 
 	// 4️ Execute transaction
 	if err := common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
-		if err := h.Query.CreateCatagory(tx, req); err != nil {
+		if err := h.Query.CreateCategory(tx, req); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create category: "+err.Error())
 		}
 		logData := utils.NewCommon(constant.EquipmentCategory, constant.ActionCreate, empID)
@@ -133,7 +134,7 @@ func (h *HandlerFunc) DeleteCategory(c *gin.Context) {
 
 	// 4️ Execute deletion in transaction
 	if err := common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
-		if err := h.Query.DeleteCategory(categoryID); err != nil {
+		if err := h.Query.DeleteCategory(tx, categoryID); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to delete category: "+err.Error())
 		}
 		logData := utils.NewCommon(constant.EquipmentCategory, constant.ActionDelete, empID)
@@ -280,15 +281,15 @@ func (h *HandlerFunc) CreateEquipment(c *gin.Context) {
 
 // GetEquipmentByCategory fetches all equipment for a specific category.
 // Steps:
-// 1. Check permissions (SUPERADMIN, ADMIN, HR only)
+// 1. Check permissions (SUPERADMIN, ADMIN only)
 // 2. Get category ID from query params
 // 3. Call repository to fetch equipment by category
 // 4. Return response
 func (h *HandlerFunc) GetEquipmentByCategory(c *gin.Context) {
 	// 1️ Permission check
 	role := c.GetString("role")
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
-		utils.RespondWithError(c, http.StatusForbidden, "only ADMIN, SUPERADMIN, and HR can view equipment")
+	if role != "SUPERADMIN" && role != "ADMIN" {
+		utils.RespondWithError(c, http.StatusForbidden, "only ADMIN and SUPERADMIN can view equipment")
 		return
 	}
 
@@ -325,15 +326,16 @@ func (h *HandlerFunc) GetEquipmentByCategory(c *gin.Context) {
 }
 
 // GetAllEquipment fetches all equipment.
-// Permission: SUPERADMIN, ADMIN, HR
+// Permission: SUPERADMIN, ADMIN only
 func (h *HandlerFunc) GetAllEquipment(c *gin.Context) {
 	role := c.GetString("role")
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
-		utils.RespondWithError(c, http.StatusForbidden, "only ADMIN, SUPERADMIN, and HR can view equipment")
+	if role != "SUPERADMIN" && role != "ADMIN" {
+		utils.RespondWithError(c, http.StatusForbidden, "only ADMIN and SUPERADMIN can view equipment")
 		return
 	}
 
 	data, err := h.Query.GetAllEquipment()
+	fmt.Println("data", data)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, "failed to get equipment: "+err.Error())
 		return
@@ -477,15 +479,43 @@ func (h *HandlerFunc) AssignEquipment(c *gin.Context) {
 		utils.RespondWithError(c, http.StatusForbidden, "access denied")
 		return
 	}
+	empIDRaw, ok := c.Get("user_id")
+	if !ok {
+		utils.RespondWithError(c, http.StatusUnauthorized, "employee ID missing")
+		return
+	}
+	empIDStr, ok := empIDRaw.(string)
+	if !ok {
+		utils.RespondWithError(c, http.StatusInternalServerError, "invalid employee ID format")
+		return
+	}
+	empID, err := uuid.Parse(empIDStr)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "invalid employee UUID")
+		return
+	}
 
 	var req models.AssignEquipmentRequest
+	req.AssignedBy = empID
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := models.Validate.Struct(&req); err != nil {
+		utils.RespondWithError(c, http.StatusBadRequest, "validation error: "+err.Error())
+		return
+	}
 
 	if err := common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
-		return h.Query.AssignEquipment(tx, req)
+		if err := h.Query.AssignEquipment(tx, req); err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to assign equipment: "+err.Error())
+		}
+		logData := utils.NewCommon(constant.EquipmentAssign, constant.ActionCreate, empID)
+		if err := common.AddLog(logData, tx); err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
+		}
+		return nil
+
 	}); err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -503,6 +533,7 @@ func (h *HandlerFunc) GetAllAssignedEquipment(c *gin.Context) {
 		return
 	}
 	data, err := h.Query.GetAllAssignedEquipment()
+	fmt.Println("data", data)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -511,8 +542,10 @@ func (h *HandlerFunc) GetAllAssignedEquipment(c *gin.Context) {
 }
 
 func (h *HandlerFunc) GetAssignedEquipmentByEmployee(c *gin.Context) {
-	employeeID := c.Param("id")
+	id := c.Param("id")
+	employeeID, err := uuid.Parse(id)
 	data, err := h.Query.GetAssignedEquipmentByEmployee(employeeID)
+	fmt.Println("databy id", data)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -603,6 +636,7 @@ func (h *HandlerFunc) UpdateAssignment(c *gin.Context) {
 	}
 
 	var req models.UpdateAssignmentRequest
+	req.AssignedBy = empID
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, err.Error())
 		return

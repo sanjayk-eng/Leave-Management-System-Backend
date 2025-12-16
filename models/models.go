@@ -257,37 +257,43 @@ type EquipmentCategoryRes struct {
 }
 
 type EquipmentRequest struct {
-	ID            *string `json:"id,omitempty" validate:"omitempty,uuid4"`
-	Name          string  `json:"name" validate:"required,min=2,max=100"`
-	CategoryID    string  `json:"category_id" validate:"required,uuid4"`
-	Ownership     string  `json:"ownership,omitempty" validate:"omitempty,oneof=COMPANY SELF"`
-	IsShared      *bool   `json:"is_shared,omitempty"`
-	TotalQuantity int     `json:"total_quantity" validate:"required,min=0"`
+	ID                *uuid.UUID `json:"id,omitempty" validate:"omitempty,uuid4"`
+	Name              string     `json:"name" validate:"required,min=2,max=100"`
+	CategoryID        uuid.UUID  `json:"category_id" validate:"required,uuid4"`
+	IsShared          *bool      `json:"is_shared,omitempty"`
+	Price             float64    `json:"price" validate:"min=0"`
+	TotalQuantity     int        `json:"total_quantity" validate:"required,min=0"`
+	RemainingQuantity *int       `json:"remaining_quantity"`
+	PurchaseDate      *time.Time `json:"purchase_date,omitempty"` // Optional
 }
 
 type EquipmentRes struct {
-	ID            string    `db:"id" json:"id"`
-	Name          string    `db:"name" json:"name"`
-	CategoryID    string    `db:"category_id" json:"category_id"`
-	Ownership     string    `db:"ownership" json:"ownership"`
-	IsShared      bool      `db:"is_shared" json:"is_shared"`
-	TotalQuantity int       `db:"total_quantity" json:"total_quantity"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID                uuid.UUID `db:"id" json:"id"`
+	Name              string    `db:"name" json:"name"`
+	CategoryID        uuid.UUID `db:"category_id" json:"category_id"`
+	IsShared          bool      `db:"is_shared" json:"is_shared"`
+	Price             float64   `db:"price" json:"price"`
+	TotalQuantity     int       `db:"total_quantity" json:"total_quantity"`
+	RemainingQuantity int       `db:"remaining_quantity" json:"remaining_quantity"`
+	PurchaseDate      time.Time `db:"purchase_date" json:"purchase_date"` // <--- added
+	CreatedAt         time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt         time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // AssignEquipmentRequest - used when assigning equipment to an employee
 type AssignEquipmentRequest struct {
-	EmployeeID  uuid.UUID `json:"employee_id" validate:"required"`    // Employee to assign equipment
-	EquipmentID uuid.UUID `json:"equipment_id" validate:"required"`   // Equipment being assigned
-	Quantity    int       `json:"quantity" validate:"required,min=1"` // Quantity to assign
+	EmployeeID  uuid.UUID `json:"employee_id" validate:"required"`
+	EquipmentID uuid.UUID `json:"equipment_id" validate:"required"`
+	Quantity    int       `json:"quantity" validate:"required,min=1"`
+	AssignedBy  uuid.UUID `json:"assigned_by" validate:"required"`
 }
 type AssignEquipmentResponse struct {
-	EmployeeName  string `json:"employee_name" db:"employee_name"`   // Name of employee
-	EmployeeEmail string `json:"employee_email" db:"employee_email"` // Email of employee
-	EquipmentName string `json:"equipment_name" db:"equipment_name"` // Equipment name
-	Ownership     string `json:"ownership" db:"ownership"`           // Ownership type (COMPANY or SELF)
-	Quantity      int    `json:"quantity" db:"quantity"`             // Assigned quantity
+	EmployeeName   string    `db:"employee_name" json:"employee_name"`
+	EmployeeEmail  string    `db:"employee_email" json:"employee_email"`
+	EquipmentName  string    `db:"equipment_name" json:"equipment_name"`
+	PurchaseDate   time.Time `db:"purchase_date" json:"purchase_date"` // purchase/buying date
+	Quantity       int       `db:"quantity" json:"quantity"`
+	ApprovedByName string    `db:"approved_by_name" json:"approved_by_name"` // new field
 }
 
 // RemoveEquipmentRequest - used when removing/returning equipment from an employee
@@ -298,8 +304,9 @@ type RemoveEquipmentRequest struct {
 
 // UpdateAssignmentRequest - used for both reassigning equipment and updating quantity
 type UpdateAssignmentRequest struct {
-	FromEmployeeID uuid.UUID  `json:"from_employee_id" validate:"required"` // Current employee
-	ToEmployeeID   *uuid.UUID `json:"to_employee_id,omitempty"`             // New employee (optional - if provided, it's reassignment)
-	EquipmentID    uuid.UUID  `json:"equipment_id" validate:"required"`     // Equipment being updated/reassigned
-	Quantity       int        `json:"quantity" validate:"required,min=1"`   // Quantity to update/reassign
+	FromEmployeeID uuid.UUID  `json:"from_employee_id" validate:"required"`
+	ToEmployeeID   *uuid.UUID `json:"to_employee_id,omitempty"`
+	EquipmentID    uuid.UUID  `json:"equipment_id" validate:"required"`
+	Quantity       int        `json:"quantity" validate:"required,min=1"`
+	AssignedBy     uuid.UUID  `json:"assigned_by" validate:"required"` // Add this
 }
