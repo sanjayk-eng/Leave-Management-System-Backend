@@ -43,27 +43,20 @@ func (s *HandlerFunc) GetLeaveBalances(c *gin.Context) {
 	var balances []Balance
 
 	query := `
-		SELECT 
-			lt.name AS leave_type,
-			COALESCE(b.used, 0) AS used,
-			lt.default_entitlement AS total,
-			COALESCE(b.closing, lt.default_entitlement) AS available
-		FROM Tbl_Leave_Type lt
-		LEFT JOIN Tbl_Leave_balance b 
-			ON lt.id = b.leave_type_id AND b.employee_id = $1
-		ORDER BY lt.id
-	`
+	SELECT 
+		lt.name AS leave_type,
+		COALESCE(b.used, 0) AS used,
+		lt.default_entitlement AS total,
+		COALESCE(b.closing, lt.default_entitlement) AS available
+	FROM Tbl_Leave_Type lt
+	LEFT JOIN Tbl_Leave_balance b 
+		ON lt.id = b.leave_type_id AND b.employee_id = $1
+	ORDER BY lt.id
+`
 
-	// 4. Prepare the statement explicitly
-	stmt, err := s.Query.DB.Preparex(query)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to prepare statement: "+err.Error())
-		return
-	}
-	defer stmt.Close()
-
-	if err := stmt.Select(&balances, employeeID); err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch leave balances: "+err.Error())
+	if err := s.Query.DB.Select(&balances, query, employeeID); err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError,
+			"Failed to fetch leave balances: "+err.Error())
 		return
 	}
 

@@ -83,8 +83,10 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 	}
 
 	// Validate Dates
-	today := time.Now().Truncate(24 * time.Hour)
-	if input.StartDate.Before(today) {
+	now := time.Now()
+	cutoff := now.Add(-12 * time.Hour)
+
+	if input.StartDate.Before(cutoff) {
 		utils.RespondWithError(c, 400, "Start date cannot be earlier than today")
 		return
 	}
@@ -667,109 +669,38 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		utils.RespondWithError(c, http.StatusUnauthorized, "Role not found in context")
 		return
 	}
-
 	userIDStr := c.GetString("user_id")
 	if userIDStr == "" {
 		utils.RespondWithError(c, http.StatusUnauthorized, "User ID not found in context")
 		return
 	}
-
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, "Invalid user ID format: "+err.Error())
 		return
 	}
-
 	// 2️ Execute query based on role
 	var result []models.LeaveResponse
-
 	switch role {
-	case "EMPLOYEE":
+	case constant.ROLE_EMPLOYEE:
 		// Employees can only see their own leaves
-		query := `
-		SELECT 
-			l.id,
-			e.full_name AS employee,
-			lt.name AS leave_type,
-			lt.is_paid AS is_paid,
-			COALESCE(h.type, 'FULL') AS leave_timing_type,
-			COALESCE(h.timing, 'Full Day') AS leave_timing,
-			l.start_date,
-			l.end_date,
-			l.days,
-			COALESCE(l.reason, '') AS reason,
-			l.status,
-			l.created_at AS applied_at
-		FROM Tbl_Leave l
-		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
-		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
-		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE l.employee_id = $1
-		ORDER BY l.created_at DESC`
-
-		err = h.Query.DB.Select(&result, query, userID)
-
-	case "MANAGER":
+		result, err = h.Query.GetAllEmployeeLeave(userID)
+	case constant.ROLE_MANAGER:
 		// Manager can see: their own leaves + their team members' leaves
-		query := `
-		SELECT 
-			l.id,
-			e.full_name AS employee,
-			lt.name AS leave_type,
-			lt.is_paid AS is_paid,
-			COALESCE(h.type, 'FULL') AS leave_timing_type,
-			COALESCE(h.timing, 'Full Day') AS leave_timing,
-			l.start_date,
-			l.end_date,
-			l.days,
-			COALESCE(l.reason, '') AS reason,
-			l.status,
-			l.created_at AS applied_at
-		FROM Tbl_Leave l
-		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
-		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
-		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE (e.manager_id = $1 OR l.employee_id = $1)
-		ORDER BY l.created_at DESC`
-
-		err = h.Query.DB.Select(&result, query, userID)
-
-	case "HR", "ADMIN", "SUPERADMIN":
+		result, err = h.Query.GetAllleavebaseonassignManager(userID)
+	case constant.ROLE_ADMIN, constant.ROLE_HR, constant.ROLE_SUPER_ADMIN:
+		result, err = h.Query.GetAllLeave()
 		// HR, Admin and SuperAdmin can see all leaves
-		query := `
-		SELECT 
-			l.id,
-			e.full_name AS employee,
-			lt.name AS leave_type,
-			lt.is_paid AS is_paid,
-			COALESCE(h.type, 'FULL') AS leave_timing_type,
-			COALESCE(h.timing, 'Full Day') AS leave_timing,
-			l.start_date,
-			l.end_date,
-			l.days,
-			COALESCE(l.reason, '') AS reason,
-			l.status,
-			l.created_at AS applied_at
-		FROM Tbl_Leave l
-		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
-		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
-		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		ORDER BY l.created_at DESC`
-
-		err = h.Query.DB.Select(&result, query)
-
 	default:
 		utils.RespondWithError(c, http.StatusForbidden, "Invalid role: "+role)
 		return
 	}
-
 	// 3️ Handle query errors
 	if err != nil {
 		fmt.Printf(" GetAllLeaves DB Error: %v\n", err)
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch leaves: "+err.Error())
 		return
 	}
-
 	// 4️ Handle empty result
 	if result == nil {
 		result = []models.LeaveResponse{}

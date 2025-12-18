@@ -218,3 +218,85 @@ func (r *Repository) UpdateLeaveTiming(tx *sqlx.Tx, id int, timing string) error
 
 	return nil
 }
+
+// rolde base get leave
+func (r *Repository) GetAllEmployeeLeave(userID uuid.UUID) ([]models.LeaveResponse, error) {
+	var result []models.LeaveResponse
+	query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			lt.is_paid AS is_paid,
+			COALESCE(h.type, 'FULL') AS leave_timing_type,
+			COALESCE(h.timing, 'Full Day') AS leave_timing,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		WHERE l.employee_id = $1
+		ORDER BY l.created_at DESC`
+
+	err := r.DB.Select(&result, query, userID)
+	return result, err
+}
+func (r *Repository) GetAllleavebaseonassignManager(userID uuid.UUID) ([]models.LeaveResponse, error) {
+
+	var result []models.LeaveResponse
+	query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			lt.is_paid AS is_paid,
+			COALESCE(h.type, 'FULL') AS leave_timing_type,
+			COALESCE(h.timing, 'Full Day') AS leave_timing,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		WHERE (e.manager_id = $1 OR l.employee_id = $1)
+		ORDER BY l.created_at DESC`
+
+	err := r.DB.Select(&result, query, userID)
+	return result, err
+}
+
+func (r *Repository) GetAllLeave() ([]models.LeaveResponse, error) {
+	var result []models.LeaveResponse
+	query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			lt.is_paid AS is_paid,
+			COALESCE(h.type, 'FULL') AS leave_timing_type,
+			COALESCE(h.timing, 'Full Day') AS leave_timing,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		ORDER BY l.created_at DESC`
+
+	err := r.DB.Select(&result, query)
+	return result, err
+
+}

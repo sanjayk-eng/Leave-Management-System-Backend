@@ -53,7 +53,7 @@ func (h *HandlerFunc) GetEmployee(c *gin.Context) {
 // GetEmployeeById - GET /api/employee/:id
 // Simple endpoint - just fetch and return employee data
 func (h *HandlerFunc) GetEmployeeById(c *gin.Context) {
-	// 1️⃣ Parse Employee ID
+	// 1️ Parse Employee ID
 	empIDStr := c.Param("id")
 	empID, err := uuid.Parse(empIDStr)
 	if err != nil {
@@ -61,17 +61,17 @@ func (h *HandlerFunc) GetEmployeeById(c *gin.Context) {
 		return
 	}
 
-	// 2️⃣ Fetch employee details
+	// 2️ Fetch employee details
 	employee, err := h.Query.GetEmployeeByID(empID)
 	if err != nil {
 		utils.RespondWithError(c, 404, "employee not found")
 		return
 	}
 
-	// 3️⃣ Remove password hash (security)
+	// 3️ Remove password hash (security)
 	employee.Password = ""
 
-	// 4️⃣ Response
+	// 4️ Response
 	c.JSON(200, gin.H{
 		"message":  "employee details fetched successfully",
 		"employee": employee,
