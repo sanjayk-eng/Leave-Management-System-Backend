@@ -83,14 +83,14 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		return
 	}
 
-	// Validate Dates
-	now := time.Now()
-	cutoff := now.Add(-12 * time.Hour)
+	// // Validate Dates
+	// now := time.Now()
+	// cutoff := now.Add(-12 * time.Hour)
 
-	if input.StartDate.Before(cutoff) {
-		utils.RespondWithError(c, 400, "Start date cannot be earlier than today")
-		return
-	}
+	// if input.StartDate.Before(cutoff) {
+	// 	utils.RespondWithError(c, 400, "Start date cannot be earlier than today")
+	// 	return
+	// }
 	if input.EndDate.Before(input.StartDate) {
 		utils.RespondWithError(c, 400, "End date cannot be earlier than start date")
 		return
