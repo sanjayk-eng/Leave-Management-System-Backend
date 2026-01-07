@@ -615,7 +615,7 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 			role,
 		)
 		if err != nil {
-			fmt.Printf("Failed to send password update notification: %v\n", err)
+			fmt.Printf("Failed to send password update notification: " + err.Error())
 		} else {
 			fmt.Printf("Password update email sent successfully to: %s\n", empDetails.Email)
 		}
