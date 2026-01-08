@@ -2,10 +2,12 @@ package utils
 
 import (
 	"fmt"
+	"net"
 	"net/smtp"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type SMTPConfig struct {
@@ -65,14 +67,38 @@ func SendEmail(to, subject, body string) error {
 
 	// Use smtp.SendMail for simpler, more reliable SMTP handling
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	fmt.Printf("SMTP Config - Host: %s, Port: %d, From: %s\n", config.Host, config.Port, config.From)
+	fmt.Printf("SMTP Config - Host: %s, Port: %d, From: %s, Username: %s\n", 
+		config.Host, config.Port, config.From, config.Username)
 	
+	// Test connection first with timeout (important for Render/cloud platforms)
+	fmt.Printf("Testing SMTP connection to %s...\n", addr)
+	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
+	if err != nil {
+		detailedErr := fmt.Errorf("SMTP connection failed - Cannot connect to %s: %v", addr, err)
+		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
+		fmt.Printf("Troubleshooting for Render:\n")
+		fmt.Printf("  1. Check if port %d is allowed in Render firewall\n", config.Port)
+		fmt.Printf("  2. Verify SMTP_HOST is correct: %s\n", config.Host)
+		fmt.Printf("  3. Check network connectivity from Render to SMTP server\n")
+		fmt.Printf("  4. Some SMTP providers block cloud IPs - consider using SendGrid/Mailgun\n")
+		return detailedErr
+	}
+	conn.Close()
+	fmt.Printf("SMTP connection test successful\n")
+	
+	// Send email with timeout protection
+	fmt.Printf("Sending email via SMTP...\n")
 	err = smtp.SendMail(addr, auth, config.From, []string{to}, []byte(message))
 	if err != nil {
 		detailedErr := fmt.Errorf("SMTP send failed - Host: %s, Port: %d, To: %s, Error: %v", 
 			config.Host, config.Port, to, err)
 		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
-		fmt.Printf("Troubleshooting: Check SMTP credentials, network connectivity, and firewall settings\n")
+		fmt.Printf("Troubleshooting for Render:\n")
+		fmt.Printf("  1. Verify SMTP_USERNAME and SMTP_PASSWORD are correct in Render environment variables\n")
+		fmt.Printf("  2. For Gmail: Ensure you're using an App Password (not regular password)\n")
+		fmt.Printf("  3. Check if SMTP server allows connections from Render's IP addresses\n")
+		fmt.Printf("  4. Verify SMTP_FROM matches SMTP_USERNAME\n")
+		fmt.Printf("  5. Some email providers block cloud platforms - try SendGrid or Mailgun\n")
 		return detailedErr
 	}
 
@@ -107,9 +133,30 @@ func SendEmailToMultiple(recipients []string, subject, body string) error {
 
 	// Use smtp.SendMail for simpler, more reliable SMTP handling
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	fmt.Printf("SMTP Config - Host: %s, Port: %d, From: %s, Username: %s\n", 
+		config.Host, config.Port, config.From, config.Username)
+	
+	// Test connection first with timeout (important for Render/cloud platforms)
+	fmt.Printf("Testing SMTP connection to %s...\n", addr)
+	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
+	if err != nil {
+		detailedErr := fmt.Errorf("SMTP connection failed - Cannot connect to %s: %v", addr, err)
+		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
+		fmt.Printf("Troubleshooting for Render: Check firewall, network connectivity, and SMTP host\n")
+		return detailedErr
+	}
+	conn.Close()
+	fmt.Printf("SMTP connection test successful\n")
+	
+	// Send email
+	fmt.Printf("Sending email to %d recipients via SMTP...\n", len(recipients))
 	err = smtp.SendMail(addr, auth, config.From, recipients, []byte(message))
 	if err != nil {
-		return fmt.Errorf("failed to send email to multiple recipients: %v", err)
+		detailedErr := fmt.Errorf("SMTP send failed - Host: %s, Port: %d, Recipients: %d, Error: %v", 
+			config.Host, config.Port, len(recipients), err)
+		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
+		fmt.Printf("Troubleshooting for Render: Check SMTP credentials and server access\n")
+		return detailedErr
 	}
 
 	fmt.Printf("Email sent successfully to %d recipients\n", len(recipients))
