@@ -185,6 +185,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		leaveType, _ := h.Query.GetLeaveTypeById(input.LeaveTypeID)
 
 		recipients, err := h.Query.GetAdminAndEmployeeEmail(employeeID)
+		
 		if err != nil {
 			fmt.Printf("Failed to get notification recipients: %v\n", err)
 			return
@@ -732,6 +733,66 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		"message": "Leaves fetched successfully",
 		"total":   len(result),
 		"role":    role,
+		"month":   month,
+		"year":    year,
+		"data":    result,
+	})
+}
+
+// GetAllMyLeave - GET /api/leaves/my
+// Get current user's own leaves with month/year filtering
+func (h *HandlerFunc) GetAllMyLeave(c *gin.Context) {
+	// 1️⃣ Get User ID with validation
+	userIDStr := c.GetString("user_id")
+	if userIDStr == "" {
+		utils.RespondWithError(c, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid user ID format: "+err.Error())
+		return
+	}
+
+	// 2️⃣ Parse query parameters for month and year filtering
+	now := time.Now()
+	monthStr := c.DefaultQuery("month", fmt.Sprintf("%d", int(now.Month())))
+	yearStr := c.DefaultQuery("year", fmt.Sprintf("%d", now.Year()))
+
+	// Validate month (1-12)
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month < 1 || month > 12 {
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid month. Must be between 1-12")
+		return
+	}
+
+	// Validate year
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year < 2000 || year > 2100 {
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid year. Must be between 2000-2100")
+		return
+	}
+
+	// 3️⃣ Execute query to get user's own leaves
+	result, err := h.Query.GetMyLeavesByMonthYear(userID, month, year)
+	
+	// 4️⃣ Handle query errors
+	if err != nil {
+		fmt.Printf("GetAllMyLeave DB Error: %v\n", err)
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch my leaves: "+err.Error())
+		return
+	}
+	
+	// 5️⃣ Handle empty result
+	if result == nil {
+		result = []models.LeaveResponse{}
+	}
+
+	// 6️⃣ Return success with metadata
+	c.JSON(http.StatusOK, gin.H{
+		"message": "My leaves fetched successfully",
+		"total":   len(result),
+		"user_id": userID,
 		"month":   month,
 		"year":    year,
 		"data":    result,

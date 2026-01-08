@@ -337,6 +337,36 @@ func (r *Repository) UpdateLeaveType(tx *sqlx.Tx, leaveTypeID int, input models.
 	return nil
 }
 
+// GetMyLeavesByMonthYear - Get current user's leaves filtered by month and year
+func (r *Repository) GetMyLeavesByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
+	var result []models.LeaveResponse
+	query := `
+		SELECT 
+			l.id,
+			e.full_name AS employee,
+			lt.name AS leave_type,
+			lt.is_paid AS is_paid,
+			COALESCE(h.type, 'FULL') AS leave_timing_type,
+			COALESCE(h.timing, 'Full Day') AS leave_timing,
+			l.start_date,
+			l.end_date,
+			l.days,
+			COALESCE(l.reason, '') AS reason,
+			l.status,
+			l.created_at AS applied_at
+		FROM Tbl_Leave l
+		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
+		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
+		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		WHERE l.employee_id = $1
+		AND EXTRACT(MONTH FROM l.start_date) = $2
+		AND EXTRACT(YEAR FROM l.start_date) = $3
+		ORDER BY l.created_at DESC`
+
+	err := r.DB.Select(&result, query, userID, month, year)
+	return result, err
+}
+
 // DeleteLeaveType - Delete leave policy
 func (r *Repository) DeleteLeaveType(tx *sqlx.Tx, leaveTypeID int) error {
 	// Check if leave type is being used in any leave applications
