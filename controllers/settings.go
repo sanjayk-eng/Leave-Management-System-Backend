@@ -18,7 +18,7 @@ func (h *HandlerFunc) GetCompanySettings(c *gin.Context) {
 	// Only SUPERADMIN and ADMIN allowed
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
+	if role != "SUPERADMIN" && role != "ADMIN" {
 		utils.RespondWithError(c, 403, "Not authorized to view settings")
 		return
 	}
@@ -40,7 +40,7 @@ func (h *HandlerFunc) UpdateCompanySettings(c *gin.Context) {
 	// Only SUPERADMIN and ADMIN allowed
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
+	if role != "SUPERADMIN" && role != "ADMIN" {
 		utils.RespondWithError(c, 403, "Not authorized to update settings")
 		return
 	}

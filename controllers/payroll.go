@@ -13,6 +13,7 @@ import (
 	"github.com/jung-kurt/gofpdf"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/service"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
 )
 
 // PayrollPreview represents preview data for a payroll run
@@ -30,7 +31,7 @@ type PayrollPreview struct {
 func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 	roleRaw, _ := c.Get("role")
 	role := roleRaw.(string)
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
+	if role != "SUPERADMIN" && role != "ADMIN" {
 		utils.RespondWithError(c, 403, "Not authorized to run payroll")
 		return
 	}
@@ -523,8 +524,8 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 	var rows *sql.Rows
 	var err error
 
-	// 🌟 If Employee or Manager -> only their own slips
-	if role == "EMPLOYEE" || role == "MANAGER" {
+	//  If Employee or Manager -> only their own slips
+	if role == constant.ROLE_EMPLOYEE || role == constant.ROLE_MANAGER || role == constant.ROLE_HR {
 		empIDValue, ok := c.Get("user_id")
 		if !ok {
 			utils.RespondWithError(c, 500, "Failed to get employee ID")
@@ -545,7 +546,7 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 		}
 		rows, err = h.Query.GetFinalizedPayslipsByEmployee(empID)
 	} else {
-		// 🌟 SuperAdmin / Admin -> all slips
+		//  SuperAdmin / Admin -> all slips
 		rows, err = h.Query.GetAllFinalizedPayslips()
 	}
 

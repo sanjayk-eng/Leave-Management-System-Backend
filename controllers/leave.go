@@ -469,7 +469,7 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 		}
 
 		// ADMIN/SUPERADMIN FINAL REJECTION (Second Level)
-		if role == "ADMIN" || role == "SUPERADMIN" {
+		if role == "ADMIN" || role == "SUPERADMIN" || role == "HR" {
 			_, err = tx.Exec(`UPDATE Tbl_Leave SET status='REJECTED', approved_by=$2, updated_at=NOW() WHERE id=$1`, leaveID, approverID)
 			if err != nil {
 				utils.RespondWithError(c, 500, "Failed to finalize leave rejection: "+err.Error())

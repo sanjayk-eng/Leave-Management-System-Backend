@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
 )
 
 type EmployeeAuthData struct {
@@ -47,9 +48,25 @@ func (r *Repository) GetEmployeeByEmail(email string) (EmployeeAuthData, error) 
 	return emp, err
 }
 
-func (r *Repository) GetAllEmployees(roleFilter, designationFilter string) ([]models.EmployeeInput, error) {
+func (r *Repository) GetAllEmployees(roleFilter, designationFilter, role string) ([]models.EmployeeInput, error) {
+	var query string
+
+	if role == constant.ROLE_HR {
+		query = `
+        SELECT 
+            e.id, e.full_name, e.email, e.status,
+            r.type AS role,e.password, e.manager_id, e.designation_id,
+             e.joining_date, e.ending_date,
+            e.created_at, e.updated_at, e.deleted_at
+        FROM Tbl_Employee e
+        JOIN Tbl_Role r ON e.role_id = r.id
+        LEFT JOIN Tbl_Designation d ON e.designation_id = d.id
+        WHERE 1=1
+    `
+	}
 	// Build dynamic query with optional filters
-	query := `
+	if role == constant.ROLE_ADMIN || role == constant.ROLE_SUPER_ADMIN {
+		query = `
         SELECT 
             e.id, e.full_name, e.email, e.status,
             r.type AS role, e.password, e.manager_id, e.designation_id,
@@ -60,6 +77,7 @@ func (r *Repository) GetAllEmployees(roleFilter, designationFilter string) ([]mo
         LEFT JOIN Tbl_Designation d ON e.designation_id = d.id
         WHERE 1=1
     `
+	}
 
 	args := []interface{}{}
 	argCount := 1
@@ -91,24 +109,47 @@ func (r *Repository) GetAllEmployees(roleFilter, designationFilter string) ([]mo
 	for rows.Next() {
 		var emp models.EmployeeInput
 
-		err := rows.Scan(
-			&emp.ID,
-			&emp.FullName,
-			&emp.Email,
-			&emp.Status,
-			&emp.Role,
-			&emp.Password,
-			&emp.ManagerID,
-			&emp.DesignationID,
-			&emp.Salary,
-			&emp.JoiningDate,
-			&emp.EndingDate,
-			&emp.CreatedAt,
-			&emp.UpdatedAt,
-			&emp.DeletedAt,
-		)
-		if err != nil {
-			return nil, err
+		if role == constant.ROLE_HR {
+			err := rows.Scan(
+				&emp.ID,
+				&emp.FullName,
+				&emp.Email,
+				&emp.Status,
+				&emp.Role,
+				&emp.Password,
+				&emp.ManagerID,
+				&emp.DesignationID,
+				&emp.JoiningDate,
+				&emp.EndingDate,
+				&emp.CreatedAt,
+				&emp.UpdatedAt,
+				&emp.DeletedAt,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if role == constant.ROLE_ADMIN || role == constant.ROLE_SUPER_ADMIN {
+			err := rows.Scan(
+				&emp.ID,
+				&emp.FullName,
+				&emp.Email,
+				&emp.Status,
+				&emp.Role,
+				&emp.Password,
+				&emp.ManagerID,
+				&emp.DesignationID,
+				&emp.Salary,
+				&emp.JoiningDate,
+				&emp.EndingDate,
+				&emp.CreatedAt,
+				&emp.UpdatedAt,
+				&emp.DeletedAt,
+			)
+			if err != nil {
+				return nil, err
+			}
+
 		}
 
 		// ------- Fetch manager name if exists -------
@@ -137,6 +178,7 @@ func (r *Repository) GetAllEmployees(roleFilter, designationFilter string) ([]mo
 
 		employees = append(employees, emp)
 	}
+	fmt.Println("employee", employees)
 
 	return employees, nil
 }

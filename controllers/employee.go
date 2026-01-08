@@ -34,7 +34,7 @@ func (h *HandlerFunc) GetEmployee(c *gin.Context) {
 	roleFilter := c.Query("role")               // e.g., ?role=EMPLOYEE
 	designationFilter := c.Query("designation") // e.g., ?designation=Senior Developer
 
-	employees, err := h.Query.GetAllEmployees(roleFilter, designationFilter)
+	employees, err := h.Query.GetAllEmployees(roleFilter, designationFilter, r)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -276,7 +276,7 @@ func (h *HandlerFunc) DeleteEmployeeStatus(c *gin.Context) {
 	role, _ := c.Get("role")
 	r := role.(string)
 
-	if r != "SUPERADMIN" && r != "ADMIN" && r != "HR" {
+	if r != "SUPERADMIN" && r != "ADMIN" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
@@ -289,7 +289,7 @@ func (h *HandlerFunc) DeleteEmployeeStatus(c *gin.Context) {
 	}
 
 	// HR and ADMIN cannot deactivate SUPERADMIN
-	if (r == "ADMIN" || r == "HR") && targetEmp.Role == "SUPERADMIN" {
+	if (r == "ADMIN") && targetEmp.Role == "SUPERADMIN" {
 		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
 		return
 	}
@@ -309,7 +309,7 @@ func (h *HandlerFunc) DeleteEmployeeStatus(c *gin.Context) {
 func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 	// 1️ Permission check
 	role := c.GetString("role")
-	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
+	if role != "SUPERADMIN" && role != "ADMIN" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
@@ -408,11 +408,11 @@ func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 // Anyone can update their own name
 // Only SUPERADMIN and ADMIN can update email and salary
 func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
-	// 1️⃣ Get current user info
+	// 1️ Get current user info
 	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
 	role := c.GetString("role")
 
-	// 2️⃣ Parse Employee ID
+	// 2️ Parse Employee ID
 	empIDStr := c.Param("id")
 	empID, err := uuid.Parse(empIDStr)
 	if err != nil {
@@ -420,20 +420,20 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		return
 	}
 
-	// 3️⃣ Check if employee exists
+	// 3️ Check if employee exists
 	existingEmp, err := h.Query.GetEmployeeByID(empID)
 	if err != nil {
 		utils.RespondWithError(c, 404, "employee not found")
 		return
 	}
 
-	// 3.5️⃣ HR and ADMIN cannot edit SUPERADMIN
+	// 3.5️ HR and ADMIN cannot edit SUPERADMIN
 	if (role == "ADMIN" || role == "HR") && existingEmp.Role == "SUPERADMIN" {
 		utils.RespondWithError(c, 403, "HR and ADMIN cannot modify SUPERADMIN users")
 		return
 	}
 
-	// 4️⃣ Bind input JSON
+	// 4️ Bind input JSON
 	var input struct {
 		FullName    *string    `json:"full_name"`
 		Email       *string    `json:"email"`
@@ -446,7 +446,7 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		return
 	}
 
-	// 5️⃣ Permission checks
+	// 5️ Permission checks
 	isAdmin := role == "SUPERADMIN" || role == "ADMIN"
 	isSelf := currentUserID == empID
 
@@ -462,7 +462,7 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		return
 	}
 
-	// 6️⃣ Validate and update email if provided
+	// 6️ Validate and update email if provided
 	var finalEmail string
 	if input.Email != nil {
 		if !strings.HasSuffix(*input.Email, "@zenithive.com") {
@@ -508,14 +508,14 @@ func (h *HandlerFunc) UpdateEmployeeInfo(c *gin.Context) {
 		finalEndingDate = input.EndingDate
 	}
 
-	// 8️⃣ Update employee info
+	// 8️ Update employee info
 	err = h.Query.UpdateEmployeeInfo(empID, finalName, finalEmail, finalSalary, finalJoiningDate, finalEndingDate)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to update employee: "+err.Error())
 		return
 	}
 
-	// 9️⃣ Response
+	// 9️ Response
 	c.JSON(200, gin.H{
 		"message":     "employee information updated successfully",
 		"employee_id": empID,
@@ -632,24 +632,24 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 // GetMyTeam - GET /api/employee/my-team
 // Manager gets list of employees who report to them
 func (h *HandlerFunc) GetMyTeam(c *gin.Context) {
-	// 1️⃣ Get current user info
+	// 1️ Get current user info
 	currentUserID, _ := uuid.Parse(c.GetString("user_id"))
 	role := c.GetString("role")
 
-	// 2️⃣ Permission check - Only MANAGER can use this endpoint
+	// 2️ Permission check - Only MANAGER can use this endpoint
 	if role != "MANAGER" {
 		utils.RespondWithError(c, 403, "only managers can access team member list")
 		return
 	}
 
-	// 3️⃣ Fetch team members
+	// 3️ Fetch team members
 	employees, err := h.Query.GetEmployeesByManagerID(currentUserID)
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to fetch team members: "+err.Error())
 		return
 	}
 
-	// 4️⃣ Response
+	// 4️ Response
 	c.JSON(200, gin.H{
 		"message":      "team members fetched successfully",
 		"manager_id":   currentUserID,
