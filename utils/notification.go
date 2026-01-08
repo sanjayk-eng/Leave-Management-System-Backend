@@ -1,58 +1,112 @@
 package utils
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
+	"net/smtp"
 	"os"
-	"time"
+	"strconv"
+	"strings"
 )
 
-type EmailRequest struct {
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
 }
 
-// SendEmail sends an email using Google Apps Script
-func SendEmail(to, subject, body string) error {
-	// Get GOOGLE_SCRIPT_URL from environment at runtime
-	googleScriptURL := os.Getenv("GOOGLE_SCRIPT_URL")
+// GetSMTPConfig reads SMTP configuration from environment variables
+func GetSMTPConfig() (*SMTPConfig, error) {
+	host := os.Getenv("SMTP_HOST")
+	portStr := os.Getenv("SMTP_PORT")
+	username := os.Getenv("SMTP_USERNAME")
+	password := os.Getenv("SMTP_PASSWORD")
+	from := os.Getenv("SMTP_FROM")
 
-	// Check if URL is set
-	if googleScriptURL == "" {
-		return fmt.Errorf("GOOGLE_SCRIPT_URL environment variable is not set")
+	if host == "" || portStr == "" || username == "" || password == "" || from == "" {
+		return nil, fmt.Errorf("missing SMTP configuration: ensure SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM are set")
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SMTP_PORT: %v", err)
+	}
+
+	return &SMTPConfig{
+		Host:     host,
+		Port:     port,
+		Username: username,
+		Password: password,
+		From:     from,
+	}, nil
+}
+
+// SendEmail sends an email using SMTP
+func SendEmail(to, subject, body string) error {
+	config, err := GetSMTPConfig()
+	if err != nil {
+		return fmt.Errorf("SMTP configuration error: %v", err)
 	}
 
 	fmt.Printf("Attempting to send email to: %s with subject: %s\n", to, subject)
 
-	emailReq := EmailRequest{
-		To:      to,
-		Subject: subject,
-		Body:    body,
-	}
+	// Create message
+	message := fmt.Sprintf("From: %s\r\n", config.From)
+	message += fmt.Sprintf("To: %s\r\n", to)
+	message += fmt.Sprintf("Subject: %s\r\n", subject)
+	message += "MIME-Version: 1.0\r\n"
+	message += "Content-Type: text/plain; charset=UTF-8\r\n"
+	message += "\r\n"
+	message += body
 
-	jsonData, err := json.Marshal(emailReq)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email request: %v", err)
-	}
+	// Setup authentication
+	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
 
-	client := &http.Client{
-		Timeout: 30 * time.Second, // Increased timeout for Google Apps Script
-	}
-
-	resp, err := client.Post(googleScriptURL, "application/json", bytes.NewBuffer(jsonData))
+	// Use smtp.SendMail for simpler, more reliable SMTP handling
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	err = smtp.SendMail(addr, auth, config.From, []string{to}, []byte(message))
 	if err != nil {
 		return fmt.Errorf("failed to send email: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("email service returned status: %d", resp.StatusCode)
-	}
 
 	fmt.Printf("Email sent successfully to: %s\n", to)
+	return nil
+}
+
+// SendEmailToMultiple sends email to multiple recipients
+func SendEmailToMultiple(recipients []string, subject, body string) error {
+	config, err := GetSMTPConfig()
+	if err != nil {
+		return fmt.Errorf("SMTP configuration error: %v", err)
+	}
+
+	if len(recipients) == 0 {
+		return fmt.Errorf("no recipients provided")
+	}
+
+	fmt.Printf("Attempting to send email to %d recipients with subject: %s\n", len(recipients), subject)
+
+	// Create message with multiple recipients
+	message := fmt.Sprintf("From: %s\r\n", config.From)
+	message += fmt.Sprintf("To: %s\r\n", strings.Join(recipients, ", "))
+	message += fmt.Sprintf("Subject: %s\r\n", subject)
+	message += "MIME-Version: 1.0\r\n"
+	message += "Content-Type: text/plain; charset=UTF-8\r\n"
+	message += "\r\n"
+	message += body
+
+	// Setup authentication
+	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
+
+	// Use smtp.SendMail for simpler, more reliable SMTP handling
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	err = smtp.SendMail(addr, auth, config.From, recipients, []byte(message))
+	if err != nil {
+		return fmt.Errorf("failed to send email to multiple recipients: %v", err)
+	}
+
+	fmt.Printf("Email sent successfully to %d recipients\n", len(recipients))
 	return nil
 }
 
@@ -104,14 +158,7 @@ Best regards,
 Zenithive Leave Management System
 `, employeeName, leaveType, startDate, endDate, days, reason)
 
-	for _, recipient := range recipients {
-		if err := SendEmail(recipient, subject, body); err != nil {
-			// Log error but continue sending to other recipients
-			fmt.Printf("Failed to send email to %s: %v\n", recipient, err)
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(recipients, subject, body)
 }
 
 func SendLeaveManagerRejectionEmail(
@@ -174,13 +221,7 @@ Best regards,
 Zenithive Leave Management System
 `, rejectedBy, employeeName, leaveType, startDate, endDate, days)
 
-	for _, email := range AdminEmail {
-		if err := SendEmail(email, subject, adminBody); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(AdminEmail, subject, adminBody)
 }
 
 // SendLeaveManagerApprovalEmail sends notification for manager-level approval (first step)
@@ -239,13 +280,7 @@ Best regards,
 Zenithive Leave Management System
 `, approvedBy, employeeName, leaveType, startDate, endDate, days)
 
-	for _, email := range AdminEmail {
-		if err := SendEmail(email, subject, adminBody); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(AdminEmail, subject, adminBody)
 }
 
 // SendLeaveApprovalEmail sends notification to employee when leave is approved
@@ -301,13 +336,7 @@ Best regards,
 Zenithive Leave Management System
 `, employeeName, approvedBy, leaveType, startDate, endDate, days)
 
-	for _, email := range AdminEmail {
-		if err := SendEmail(email, subject, adminBody); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(AdminEmail, subject, adminBody)
 }
 
 // SendLeaveRejectionEmail sends notification to employee when leave is rejected
@@ -365,13 +394,7 @@ Best regards,
 Zenithive Leave Management System
 `, rejectedBy, employeeName, leaveType, startDate, endDate, days)
 
-	for _, email := range AdminEmail {
-		if err := SendEmail(email, subject, adminBody); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(AdminEmail, subject, adminBody)
 }
 
 // SendLeaveAddedByAdminEmail sends notification to employee when admin/manager adds leave on their behalf
@@ -478,14 +501,7 @@ Best regards,
 Zenithive Leave Management System
 `, employeeName, leaveType, startDate, endDate, days, requestedBy, reasonText)
 
-	for _, recipient := range recipients {
-		if err := SendEmail(recipient, subject, body); err != nil {
-			// Log error but continue sending to other recipients
-			fmt.Printf("Failed to send email to %s: %v\n", recipient, err)
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(recipients, subject, body)
 }
 
 // SendLeaveWithdrawalEmail sends notification when approved leave is withdrawn
@@ -552,13 +568,7 @@ Best regards,
 Zenithive Leave Management System
 `, employeeName, withdrawnBy, withdrawnByRole, leaveType, startDate, endDate, days, reasonText)
 
-	for _, email := range adminEmails {
-		if err := SendEmail(email, subject, adminBody); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return SendEmailToMultiple(adminEmails, subject, adminBody)
 }
 
 // SendPayslipWithdrawalEmail sends notification when payslip is withdrawn

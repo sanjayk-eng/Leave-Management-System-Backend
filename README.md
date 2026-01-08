@@ -254,8 +254,12 @@ DB_USER=postgres
 DB_PASSWORD=your_password
 DB_NAME=user_management_db
 
-# Email Service
-GOOGLE_SCRIPT_URL=your_email_service_url
+# SMTP Email Configuration
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=your-email@gmail.com
 ```
 
 5. **Run the application**
