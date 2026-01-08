@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -679,38 +680,60 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		utils.RespondWithError(c, http.StatusBadRequest, "Invalid user ID format: "+err.Error())
 		return
 	}
-	// 2️ Execute query based on role
+
+	// 2️ Parse query parameters for month and year filtering
+	now := time.Now()
+	monthStr := c.DefaultQuery("month", fmt.Sprintf("%d", int(now.Month())))
+	yearStr := c.DefaultQuery("year", fmt.Sprintf("%d", now.Year()))
+
+	// Validate month (1-12)
+	month, err := strconv.Atoi(monthStr)
+	if err != nil || month < 1 || month > 12 {
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid month. Must be between 1-12")
+		return
+	}
+
+	// Validate year
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year < 2000 || year > 2100 {
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid year. Must be between 2000-2100")
+		return
+	}
+
+	// 3️ Execute query based on role with month/year filtering
 	var result []models.LeaveResponse
 	switch role {
 	case constant.ROLE_EMPLOYEE:
 		// Employees can only see their own leaves
-		result, err = h.Query.GetAllEmployeeLeave(userID)
+		result, err = h.Query.GetAllEmployeeLeaveByMonthYear(userID, month, year)
 	case constant.ROLE_MANAGER:
 		// Manager can see: their own leaves + their team members' leaves
-		result, err = h.Query.GetAllleavebaseonassignManager(userID)
+		result, err = h.Query.GetAllleavebaseonassignManagerByMonthYear(userID, month, year)
 	case constant.ROLE_ADMIN, constant.ROLE_HR, constant.ROLE_SUPER_ADMIN:
-		result, err = h.Query.GetAllLeave()
+		result, err = h.Query.GetAllLeaveByMonthYear(month, year)
 		// HR, Admin and SuperAdmin can see all leaves
 	default:
 		utils.RespondWithError(c, http.StatusForbidden, "Invalid role: "+role)
 		return
 	}
-	// 3️ Handle query errors
+	// 4️ Handle query errors
 	if err != nil {
 		fmt.Printf(" GetAllLeaves DB Error: %v\n", err)
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch leaves: "+err.Error())
 		return
 	}
-	// 4️ Handle empty result
+	// 5️ Handle empty result
 	if result == nil {
 		result = []models.LeaveResponse{}
 	}
 
-	// 5️ Return success with metadata
+	// 6️ Return success with metadata
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Leaves fetched successfully",
 		"total":   len(result),
 		"role":    role,
+		"month":   month,
+		"year":    year,
 		"data":    result,
 	})
 }

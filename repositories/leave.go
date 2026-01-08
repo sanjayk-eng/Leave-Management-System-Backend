@@ -220,7 +220,10 @@ func (r *Repository) UpdateLeaveTiming(tx *sqlx.Tx, id int, timing string) error
 }
 
 // rolde base get leave
-func (r *Repository) GetAllEmployeeLeave(userID uuid.UUID) ([]models.LeaveResponse, error) {
+
+
+// GetAllEmployeeLeaveByMonthYear - Get employee leaves filtered by month and year
+func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
 		SELECT 
@@ -241,13 +244,16 @@ func (r *Repository) GetAllEmployeeLeave(userID uuid.UUID) ([]models.LeaveRespon
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE l.employee_id = $1
+		AND EXTRACT(MONTH FROM l.start_date) = $2
+		AND EXTRACT(YEAR FROM l.start_date) = $3
 		ORDER BY l.created_at DESC`
 
-	err := r.DB.Select(&result, query, userID)
+	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
 }
-func (r *Repository) GetAllleavebaseonassignManager(userID uuid.UUID) ([]models.LeaveResponse, error) {
 
+// GetAllleavebaseonassignManagerByMonthYear - Get manager's team leaves filtered by month and year
+func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
 		SELECT 
@@ -268,13 +274,18 @@ func (r *Repository) GetAllleavebaseonassignManager(userID uuid.UUID) ([]models.
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE (e.manager_id = $1 OR l.employee_id = $1)
+		AND EXTRACT(MONTH FROM l.start_date) = $2
+		AND EXTRACT(YEAR FROM l.start_date) = $3
 		ORDER BY l.created_at DESC`
 
-	err := r.DB.Select(&result, query, userID)
+	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
 }
 
-func (r *Repository) GetAllLeave() ([]models.LeaveResponse, error) {
+
+
+// GetAllLeaveByMonthYear - Get all leaves filtered by month and year (Admin/HR/SuperAdmin)
+func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
 		SELECT 
@@ -294,11 +305,12 @@ func (r *Repository) GetAllLeave() ([]models.LeaveResponse, error) {
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		WHERE EXTRACT(MONTH FROM l.start_date) = $1
+		AND EXTRACT(YEAR FROM l.start_date) = $2
 		ORDER BY l.created_at DESC`
 
-	err := r.DB.Select(&result, query)
+	err := r.DB.Select(&result, query, month, year)
 	return result, err
-
 }
 
 // UpdateLeaveType - Update leave policy
