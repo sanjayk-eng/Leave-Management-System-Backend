@@ -65,9 +65,15 @@ func SendEmail(to, subject, body string) error {
 
 	// Use smtp.SendMail for simpler, more reliable SMTP handling
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	fmt.Printf("SMTP Config - Host: %s, Port: %d, From: %s\n", config.Host, config.Port, config.From)
+	
 	err = smtp.SendMail(addr, auth, config.From, []string{to}, []byte(message))
 	if err != nil {
-		return fmt.Errorf("failed to send email: %v", err)
+		detailedErr := fmt.Errorf("SMTP send failed - Host: %s, Port: %d, To: %s, Error: %v", 
+			config.Host, config.Port, to, err)
+		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
+		fmt.Printf("Troubleshooting: Check SMTP credentials, network connectivity, and firewall settings\n")
+		return detailedErr
 	}
 
 	fmt.Printf("Email sent successfully to: %s\n", to)
