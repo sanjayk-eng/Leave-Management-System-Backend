@@ -191,3 +191,86 @@ func CalculateAbsentDaysForMonth(db *sqlx.DB, employeeID uuid.UUID, month, year 
 
 	return totalAbsentDays
 }
+
+// LeaveBalanceData represents raw balance data from database
+type LeaveBalanceData struct {
+	LeaveTypeID int
+	Opening     float64
+	Accrued     float64
+	Used        float64
+	Adjusted    float64
+	Closing     float64
+}
+
+// LeaveTypeData represents leave type information
+type LeaveTypeData struct {
+	LeaveTypeID       int
+	LeaveTypeName     string
+	DefaultEntitlement float64
+}
+
+// CalculatedBalance represents the calculated leave balance result
+type CalculatedBalance struct {
+	LeaveTypeID int     `json:"leave_type_id"`
+	LeaveType   string  `json:"leave_type"`
+	Opening     float64 `json:"opening"`
+	Accrued     float64 `json:"accrued"`
+	Used        float64 `json:"used"`
+	Adjusted    float64 `json:"adjusted"`
+	Total       float64 `json:"total"`
+	Available   float64 `json:"available"`
+}
+
+// CalculateLeaveBalances calculates leave balances using map-based approach
+// This function takes leave types and balance records, then calculates the final balances
+func CalculateLeaveBalances(leaveTypes []LeaveTypeData, balanceRecords []LeaveBalanceData) []CalculatedBalance {
+	// Create a map of leave_type_id -> balance for O(1) lookup
+	balanceMap := make(map[int]LeaveBalanceData)
+	for _, balance := range balanceRecords {
+		balanceMap[balance.LeaveTypeID] = balance
+	}
+
+	var calculatedBalances []CalculatedBalance
+
+	// Calculate balances for each leave type
+	for _, lt := range leaveTypes {
+		balance, exists := balanceMap[lt.LeaveTypeID]
+
+		var opening, accrued, used, adjusted, total, available float64
+
+		if exists {
+			// Balance record exists - use actual values from database
+			opening = balance.Opening
+			accrued = balance.Accrued
+			used = balance.Used
+			adjusted = balance.Adjusted
+			// Total = Opening + Accrued
+			total = opening + accrued
+			// Available = Closing (which is calculated as: opening + accrued - used + adjusted)
+			available = balance.Closing
+		} else {
+			// No balance record exists - use default entitlement
+			opening = lt.DefaultEntitlement
+			accrued = 0
+			used = 0
+			adjusted = 0
+			// Total = Default Entitlement (treated as opening)
+			total = lt.DefaultEntitlement
+			// Available = Default Entitlement (since nothing used yet)
+			available = lt.DefaultEntitlement
+		}
+
+		calculatedBalances = append(calculatedBalances, CalculatedBalance{
+			LeaveTypeID: lt.LeaveTypeID,
+			LeaveType:   lt.LeaveTypeName,
+			Opening:     opening,
+			Accrued:     accrued,
+			Used:        used,
+			Adjusted:    adjusted,
+			Total:       total,
+			Available:   available,
+		})
+	}
+
+	return calculatedBalances
+}

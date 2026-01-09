@@ -1504,8 +1504,8 @@ func (h *HandlerFunc) UpdateLeavePolicy(c *gin.Context) {
 	}
 
 	err = common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
-		// Check if leave type exists
-		_, err := h.Query.GetLeaveTypeByIdTx(tx, leaveTypeID)
+		// Check if leave type exists and get old default entitlement
+		oldLeaveType, err := h.Query.GetLeaveTypeByIdTx(tx, leaveTypeID)
 		if err == sql.ErrNoRows {
 			return utils.CustomErr(c, http.StatusNotFound, "Leave type not found")
 		}
@@ -1513,10 +1513,23 @@ func (h *HandlerFunc) UpdateLeavePolicy(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to fetch leave type: "+err.Error())
 		}
 
+		// Get old and new default entitlement values
+		oldDefaultEntitlement := oldLeaveType.DefaultEntitlement
+		newDefaultEntitlement := *input.DefaultEntitlement
+
 		// Update leave type
 		err = h.Query.UpdateLeaveType(tx, leaveTypeID, input)
 		if err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to update leave type: "+err.Error())
+		}
+
+		// Update leave balances if default entitlement changed
+		if oldDefaultEntitlement != newDefaultEntitlement {
+			currentYear := time.Now().Year()
+			err = h.Query.UpdateLeaveBalancesForEntitlementChange(tx, leaveTypeID, oldDefaultEntitlement, newDefaultEntitlement, currentYear)
+			if err != nil {
+				return utils.CustomErr(c, http.StatusInternalServerError, "Failed to update leave balances: "+err.Error())
+			}
 		}
 
 		// Log Entry

@@ -2,11 +2,13 @@ package controllers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/service"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
 )
 
@@ -32,37 +34,81 @@ func (s *HandlerFunc) GetLeaveBalances(c *gin.Context) {
 		return
 	}
 
-	// 3. Query leave balances
-	type Balance struct {
-		LeaveType string  `db:"leave_type" json:"leave_type"`
-		Used      float64 `db:"used" json:"used"`
-		Total     float64 `db:"total" json:"total"`
-		Available float64 `db:"available" json:"available"`
+	// 3. Get current year for filtering
+	currentYear := time.Now().Year()
+
+	// 4. Fetch all leave types with their default entitlements (repository layer)
+	leaveTypes, err := s.Query.GetAllLeaveTypesWithEntitlements()
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError,
+			"Failed to fetch leave types: "+err.Error())
+		return
 	}
 
-	var balances []Balance
-
-	query := `
-	SELECT 
-		lt.name AS leave_type,
-		COALESCE(b.used, 0) AS used,
-		lt.default_entitlement AS total,
-		COALESCE(b.closing, lt.default_entitlement) AS available
-	FROM Tbl_Leave_Type lt
-	LEFT JOIN Tbl_Leave_balance b 
-		ON lt.id = b.leave_type_id AND b.employee_id = $1
-	ORDER BY lt.id
-`
-
-	if err := s.Query.DB.Select(&balances, query, employeeID); err != nil {
+	// 5. Fetch leave balances for current year (repository layer)
+	balanceRecords, err := s.Query.GetLeaveBalancesByEmployeeAndYear(employeeID, currentYear)
+	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError,
 			"Failed to fetch leave balances: "+err.Error())
 		return
 	}
 
-	// 5. Send response
+	// 6. Convert to service layer types
+	serviceLeaveTypes := make([]service.LeaveTypeData, len(leaveTypes))
+	for i, lt := range leaveTypes {
+		serviceLeaveTypes[i] = service.LeaveTypeData{
+			LeaveTypeID:       lt.LeaveTypeID,
+			LeaveTypeName:     lt.LeaveTypeName,
+			DefaultEntitlement: lt.DefaultEntitlement,
+		}
+	}
+
+	serviceBalanceRecords := make([]service.LeaveBalanceData, len(balanceRecords))
+	for i, br := range balanceRecords {
+		serviceBalanceRecords[i] = service.LeaveBalanceData{
+			LeaveTypeID: br.LeaveTypeID,
+			Opening:     br.Opening,
+			Accrued:     br.Accrued,
+			Used:        br.Used,
+			Adjusted:    br.Adjusted,
+			Closing:     br.Closing,
+		}
+	}
+
+	// 7. Calculate balances using service layer business logic (map-based)
+	calculatedBalances := service.CalculateLeaveBalances(serviceLeaveTypes, serviceBalanceRecords)
+
+	// 8. Convert back to response format
+	type Balance struct {
+		LeaveTypeID int     `json:"leave_type_id"`
+		LeaveType   string  `json:"leave_type"`
+		Opening     float64 `json:"opening"`
+		Accrued     float64 `json:"accrued"`
+		Used        float64 `json:"used"`
+		Adjusted    float64 `json:"adjusted"`
+		Total       float64 `json:"total"`
+		Available   float64 `json:"available"`
+	}
+
+	balances := make([]Balance, len(calculatedBalances))
+	for i, cb := range calculatedBalances {
+		balances[i] = Balance{
+			LeaveTypeID: cb.LeaveTypeID,
+			LeaveType:   cb.LeaveType,
+			Opening:     cb.Opening,
+			Accrued:     cb.Accrued,
+			Used:        cb.Used,
+			Adjusted:    cb.Adjusted,
+			Total:       cb.Total,
+			Available:   cb.Available,
+		}
+	}
+	fmt.Println(balances)
+
+	// 8. Send response
 	c.JSON(http.StatusOK, gin.H{
 		"employee_id": employeeID,
+		"year":        currentYear,
 		"balances":    balances,
 	})
 }
@@ -108,54 +154,19 @@ func (s *HandlerFunc) AdjustLeaveBalance(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	// 5️ Fetch or create leave balance
-	var balance struct {
-		ID          uuid.UUID `db:"id"`
-		Opening     float64   `db:"opening"`
-		Accrued     float64   `db:"accrued"`
-		Used        float64   `db:"used"`
-		Adjusted    float64   `db:"adjusted"`
-		Closing     float64   `db:"closing"`
-		EmployeeID  uuid.UUID `db:"employee_id"`
-		LeaveTypeID int       `db:"leave_type_id"`
-		Year        int       `db:"year"`
-	}
-
-	// ✔ FIX: Only fetch the fields your struct has
-	err = tx.Get(&balance, `
-        SELECT 
-            id,
-            opening,
-            accrued,
-            used,
-            adjusted,
-            closing,
-            employee_id,
-            leave_type_id,
-            year
-        FROM Tbl_Leave_balance
-        WHERE employee_id=$1 AND leave_type_id=$2 AND year=$3
-        FOR UPDATE
-    `, employeeID, input.LeaveTypeID, currentYear)
+	// 5️ Fetch or create leave balance (repository layer)
+	balance, err := s.Query.GetLeaveBalanceForAdjustment(tx, employeeID, input.LeaveTypeID, currentYear)
 
 	if err == sql.ErrNoRows {
-		// 5A: Fetch default entitlement
-		var defaultEntitlement float64
-		err = tx.Get(&defaultEntitlement, `SELECT default_entitlement FROM Tbl_Leave_Type WHERE id=$1`, input.LeaveTypeID)
+		// 5A: Fetch default entitlement (repository layer)
+		defaultEntitlement, err := s.Query.GetDefaultEntitlementByLeaveTypeID(tx, input.LeaveTypeID)
 		if err != nil {
 			utils.RespondWithError(c, 500, "Failed to fetch leave type: "+err.Error())
 			return
 		}
 
-		// 5B: Create balance row
-		err = tx.QueryRow(`
-            INSERT INTO Tbl_Leave_balance
-            (employee_id, leave_type_id, year, opening, accrued, used, adjusted, closing, created_at, updated_at)
-            VALUES ($1,$2,$3,$4,0,0,0,$4,NOW(),NOW())
-            RETURNING id, opening, accrued, used, adjusted, closing
-        `, employeeID, input.LeaveTypeID, currentYear, defaultEntitlement).
-			Scan(&balance.ID, &balance.Opening, &balance.Accrued, &balance.Used, &balance.Adjusted, &balance.Closing)
-
+		// 5B: Create balance row (repository layer)
+		balance, err = s.Query.CreateLeaveBalanceForAdjustment(tx, employeeID, input.LeaveTypeID, currentYear, defaultEntitlement)
 		if err != nil {
 			utils.RespondWithError(c, 500, "Failed to create leave balance: "+err.Error())
 			return
@@ -170,24 +181,15 @@ func (s *HandlerFunc) AdjustLeaveBalance(c *gin.Context) {
 	newAdjusted := balance.Adjusted + input.Quantity
 	newClosing := balance.Opening + balance.Accrued - balance.Used + newAdjusted
 
-	_, err = tx.Exec(`
-        UPDATE Tbl_Leave_balance
-        SET adjusted=$1, closing=$2, updated_at=NOW()
-        WHERE id=$3
-    `, newAdjusted, newClosing, balance.ID)
-
+	// Update leave balance (repository layer)
+	err = s.Query.UpdateLeaveBalanceAdjustment(tx, balance.ID, newAdjusted, newClosing)
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to update leave balance: "+err.Error())
 		return
 	}
 
-	// 7️ Insert into adjustment log
-	_, err = tx.Exec(`
-        INSERT INTO Tbl_Leave_adjustment
-        (employee_id, leave_type_id, quantity, reason, created_by, created_at, year)
-        VALUES ($1,$2,$3,$4,$5,NOW(),$6)
-    `, employeeID, input.LeaveTypeID, input.Quantity, input.Reason, c.GetString("user_id"), currentYear)
-
+	// 7️ Insert into adjustment log (repository layer)
+	err = s.Query.InsertLeaveAdjustment(tx, employeeID, input.LeaveTypeID, input.Quantity, input.Reason, c.GetString("user_id"), currentYear)
 	if err != nil {
 		utils.RespondWithError(c, 500, "Failed to record leave adjustment: "+err.Error())
 		return
