@@ -253,7 +253,6 @@ func (r *Repository) GetAllAssignedEquipment() ([]models.AssignEquipmentResponse
 		JOIN tbl_employee e  ON e.id = ea.employee_id
 		JOIN tbl_equipment eq ON eq.id = ea.equipment_id
 		JOIN tbl_employee ab ON ab.id = ea.assigned_by
-		WHERE ea.returned_at IS NULL
 		ORDER BY ea.assigned_at DESC
 	`)
 	return res, err
@@ -275,7 +274,7 @@ func (r *Repository) GetAssignedEquipmentByEmployee(employeeID uuid.UUID) ([]mod
 		JOIN tbl_employee e ON e.id = ea.employee_id
 		JOIN tbl_equipment eq ON eq.id = ea.equipment_id
 		JOIN tbl_employee ab ON ab.id = ea.assigned_by
-		WHERE ea.returned_at IS NULL AND e.id=$1
+		WHERE e.id = $1
 		ORDER BY ea.assigned_at DESC
 	`, employeeID)
 
@@ -283,81 +282,189 @@ func (r *Repository) GetAssignedEquipmentByEmployee(employeeID uuid.UUID) ([]mod
 }
 
 // RemoveEquipment (Return)
+// HARD DELETE: Permanently removes the most recent assignment from the database
 func (r *Repository) RemoveEquipment(tx *sqlx.Tx, req models.RemoveEquipmentRequest) error {
+	var assignmentID uuid.UUID
 	var qty int
 
-	err := tx.Get(&qty, `
-		SELECT quantity
+	// Get the most recent assignment (by assigned_at DESC)
+	// This handles cases where the same equipment was assigned multiple times to the same employee
+	err := tx.QueryRow(`
+		SELECT id, quantity
 		FROM tbl_equipment_assignment
-		WHERE equipment_id=$1 AND employee_id=$2 AND returned_at IS NULL
-	`, req.EquipmentID, req.EmployeeID)
+		WHERE equipment_id = $1 AND employee_id = $2
+		ORDER BY assigned_at DESC
+		LIMIT 1
+	`, req.EquipmentID, req.EmployeeID).Scan(&assignmentID, &qty)
+	
 	if err != nil {
-		return fmt.Errorf("active assignment not found")
+		return fmt.Errorf("assignment not found for equipment_id=%s, employee_id=%s: %w", 
+			req.EquipmentID, req.EmployeeID, err)
 	}
 
-	_, err = tx.Exec(`
-		UPDATE tbl_equipment_assignment
-		SET returned_at=now()
-		WHERE equipment_id=$1 AND employee_id=$2 AND returned_at IS NULL
-	`, req.EquipmentID, req.EmployeeID)
+	// HARD DELETE: Permanently delete the assignment row from database
+	result, err := tx.Exec(`
+		DELETE FROM tbl_equipment_assignment
+		WHERE id = $1
+	`, assignmentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete assignment id=%s: %w", assignmentID, err)
 	}
 
-	_, err = tx.Exec(`
+	// Check if assignment was actually deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("assignment id=%s not found", assignmentID)
+	}
+
+	// Update equipment remaining quantity (add back the quantity that was assigned)
+	result2, err := tx.Exec(`
 		UPDATE tbl_equipment
 		SET remaining_quantity = remaining_quantity + $1
-		WHERE id=$2
+		WHERE id = $2
 	`, qty, req.EquipmentID)
+	if err != nil {
+		return fmt.Errorf("failed to update equipment quantity: %w", err)
+	}
 
-	return err
+	// Verify equipment was updated
+	rowsAffected2, err := result2.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check equipment update: %w", err)
+	}
+	if rowsAffected2 == 0 {
+		return fmt.Errorf("equipment id=%s not found", req.EquipmentID)
+	}
+
+	return nil
 }
 
 // UpdateAssignment (Quantity change OR reassignment)
 func (r *Repository) UpdateAssignment(tx *sqlx.Tx, req models.UpdateAssignmentRequest) error {
+	var assignmentID uuid.UUID
 	var currentQty int
 
-	// 1️ Get current assignment quantity
-	err := tx.Get(&currentQty, `
-		SELECT quantity
+	// 1️ Get the most recent assignment ID and quantity
+	// CRITICAL FIX: Get assignment ID first to ensure we update only ONE assignment
+	// This prevents updating all assignments when multiple exist
+	err := tx.QueryRow(`
+		SELECT id, quantity
 		FROM tbl_equipment_assignment
-		WHERE equipment_id=$1 AND employee_id=$2 AND returned_at IS NULL
-	`, req.EquipmentID, req.FromEmployeeID)
+		WHERE equipment_id = $1 AND employee_id = $2
+		ORDER BY assigned_at DESC
+		LIMIT 1
+	`, req.EquipmentID, req.FromEmployeeID).Scan(&assignmentID, &currentQty)
 	if err != nil {
-		return fmt.Errorf("no active assignment found")
+		return fmt.Errorf("assignment not found for equipment_id=%s, employee_id=%s: %w", 
+			req.EquipmentID, req.FromEmployeeID, err)
 	}
 
 	// 2️ Reassignment to another employee
 	if req.ToEmployeeID != nil {
 		if req.Quantity > currentQty {
-			return fmt.Errorf("quantity exceeds assigned amount")
+			return fmt.Errorf("quantity %d exceeds assigned amount %d", req.Quantity, currentQty)
 		}
 
-		// Reduce or remove from current employee
+		// ========================================
+		// STEP 1: REMOVE FROM CURRENT EMPLOYEE FIRST
+		// ========================================
+		// This ensures current employee's assignment is removed before assigning to new employee
 		if req.Quantity == currentQty {
-			_, err = tx.Exec(`
-				UPDATE tbl_equipment_assignment
-				SET returned_at=now()
-				WHERE equipment_id=$1 AND employee_id=$2 AND returned_at IS NULL
-			`, req.EquipmentID, req.FromEmployeeID)
+			// Full reassignment - HARD DELETE the current employee's assignment
+			result, err := tx.Exec(`
+				DELETE FROM tbl_equipment_assignment
+				WHERE id = $1
+			`, assignmentID)
+			if err != nil {
+				return fmt.Errorf("failed to delete current employee assignment: %w", err)
+			}
+			rowsAffected, _ := result.RowsAffected()
+			if rowsAffected == 0 {
+				return fmt.Errorf("current employee assignment id=%s not found", assignmentID)
+			}
 		} else {
-			_, err = tx.Exec(`
+			// Partial reassignment - reduce quantity from current employee
+			result, err := tx.Exec(`
 				UPDATE tbl_equipment_assignment
 				SET quantity = quantity - $1
-				WHERE equipment_id=$2 AND employee_id=$3 AND returned_at IS NULL
-			`, req.Quantity, req.EquipmentID, req.FromEmployeeID)
-		}
-		if err != nil {
-			return err
+				WHERE id = $2
+			`, req.Quantity, assignmentID)
+			if err != nil {
+				return fmt.Errorf("failed to reduce current employee assignment quantity: %w", err)
+			}
+			rowsAffected, _ := result.RowsAffected()
+			if rowsAffected == 0 {
+				return fmt.Errorf("current employee assignment id=%s not found", assignmentID)
+			}
 		}
 
-		// Assign to new employee
+		// ========================================
+		// STEP 2: Add back quantity to equipment remaining_quantity
+		// ========================================
+		// This frees up the quantity that was assigned to current employee
 		_, err = tx.Exec(`
-			INSERT INTO tbl_equipment_assignment
-			(equipment_id, employee_id, assigned_by, quantity)
-			VALUES ($1,$2,$3,$4)
-		`, req.EquipmentID, *req.ToEmployeeID, req.AssignedBy, req.Quantity)
-		return err
+			UPDATE tbl_equipment
+			SET remaining_quantity = remaining_quantity + $1
+			WHERE id = $2
+		`, req.Quantity, req.EquipmentID)
+		if err != nil {
+			return fmt.Errorf("failed to update equipment quantity: %w", err)
+		}
+
+		// ========================================
+		// STEP 3: Assign to new employee
+		// ========================================
+		// Check if new employee already has an assignment for this equipment
+		// Get the most recent assignment (if exists) to update only that one
+		var newEmployeeAssignmentID uuid.UUID
+		var existingQty int
+		err = tx.QueryRow(`
+			SELECT id, quantity
+			FROM tbl_equipment_assignment
+			WHERE equipment_id = $1 AND employee_id = $2
+			ORDER BY assigned_at DESC
+			LIMIT 1
+		`, req.EquipmentID, *req.ToEmployeeID).Scan(&newEmployeeAssignmentID, &existingQty)
+
+		if err == nil {
+			// New employee already has assignment - update the most recent one
+			// No need to reduce remaining_quantity because we already added it back in Step 2
+			_, err = tx.Exec(`
+				UPDATE tbl_equipment_assignment
+				SET quantity = quantity + $1, assigned_by = $2
+				WHERE id = $3
+			`, req.Quantity, req.AssignedBy, newEmployeeAssignmentID)
+			if err != nil {
+				return fmt.Errorf("failed to update new employee assignment: %w", err)
+			}
+			// No need to reduce remaining_quantity - it's a transfer, not new assignment
+		} else {
+			// New employee doesn't have assignment - create new one
+			// Reduce remaining_quantity because we're assigning to new employee
+			// (We added it back in Step 2, now we reduce it again for the new assignment)
+			_, err = tx.Exec(`
+				INSERT INTO tbl_equipment_assignment
+				(equipment_id, employee_id, assigned_by, quantity)
+				VALUES ($1, $2, $3, $4)
+			`, req.EquipmentID, *req.ToEmployeeID, req.AssignedBy, req.Quantity)
+			if err != nil {
+				return fmt.Errorf("failed to create new employee assignment: %w", err)
+			}
+			// Reduce remaining_quantity because we're assigning to new employee
+			_, err = tx.Exec(`
+				UPDATE tbl_equipment
+				SET remaining_quantity = remaining_quantity - $1
+				WHERE id = $2
+			`, req.Quantity, req.EquipmentID)
+			if err != nil {
+				return fmt.Errorf("failed to update equipment quantity: %w", err)
+			}
+		}
+
+		return nil
 	}
 
 	// 3️ Quantity update for same employee
@@ -367,32 +474,50 @@ func (r *Repository) UpdateAssignment(tx *sqlx.Tx, req models.UpdateAssignmentRe
 		err := tx.Get(&remaining, `
 			SELECT remaining_quantity
 			FROM tbl_equipment
-			WHERE id=$1
+			WHERE id = $1
 			FOR UPDATE
 		`, req.EquipmentID)
-		if err != nil || remaining < diff {
-			return fmt.Errorf("not enough quantity available")
+		if err != nil {
+			return fmt.Errorf("equipment not found: %w", err)
+		}
+		if remaining < diff {
+			return fmt.Errorf("not enough quantity available: need %d, have %d", diff, remaining)
 		}
 
-		_, _ = tx.Exec(`
+		_, err = tx.Exec(`
 			UPDATE tbl_equipment
 			SET remaining_quantity = remaining_quantity - $1
-			WHERE id=$2
+			WHERE id = $2
 		`, diff, req.EquipmentID)
+		if err != nil {
+			return fmt.Errorf("failed to reduce equipment quantity: %w", err)
+		}
 	} else if diff < 0 {
-		_, _ = tx.Exec(`
+		_, err = tx.Exec(`
 			UPDATE tbl_equipment
 			SET remaining_quantity = remaining_quantity + $1
-			WHERE id=$2
+			WHERE id = $2
 		`, -diff, req.EquipmentID)
+		if err != nil {
+			return fmt.Errorf("failed to increase equipment quantity: %w", err)
+		}
 	}
 
-	// Update assignment quantity
-	_, err = tx.Exec(`
+	// CRITICAL FIX: Update assignment quantity by ID, not by equipment_id + employee_id
+	// This ensures we only update the specific assignment we found
+	result, err := tx.Exec(`
 		UPDATE tbl_equipment_assignment
-		SET quantity=$1
-		WHERE equipment_id=$2 AND employee_id=$3 AND returned_at IS NULL
-	`, req.Quantity, req.EquipmentID, req.FromEmployeeID)
+		SET quantity = $1
+		WHERE id = $2
+	`, req.Quantity, assignmentID)
+	if err != nil {
+		return fmt.Errorf("failed to update assignment quantity: %w", err)
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("assignment id=%s not found", assignmentID)
+	}
 
-	return err
+	return nil
 }
