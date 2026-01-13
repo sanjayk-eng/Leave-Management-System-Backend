@@ -1,116 +1,136 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"net"
-	"net/smtp"
+	"io"
+	"net/http"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 )
 
-type SMTPConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	From     string
+type ResendConfig struct {
+	APIKey string
+	From   string
 }
 
-// GetSMTPConfig reads SMTP configuration from environment variables
-func GetSMTPConfig() (*SMTPConfig, error) {
-	host := os.Getenv("SMTP_HOST")
-	portStr := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
-	from := os.Getenv("SMTP_FROM")
+// GetResendConfig reads Resend configuration from environment variables
+func GetResendConfig() (*ResendConfig, error) {
+	apiKey := os.Getenv("RESEND_API_KEY")
+	from := os.Getenv("RESEND_FROM")
 
-	if host == "" || portStr == "" || username == "" || password == "" || from == "" {
-		return nil, fmt.Errorf("missing SMTP configuration: ensure SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM are set")
+	if apiKey == "" || from == "" {
+		return nil, fmt.Errorf("missing Resend configuration: ensure RESEND_API_KEY and RESEND_FROM are set")
 	}
 
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid SMTP_PORT: %v", err)
-	}
-
-	return &SMTPConfig{
-		Host:     host,
-		Port:     port,
-		Username: username,
-		Password: password,
-		From:     from,
+	return &ResendConfig{
+		APIKey: apiKey,
+		From:   from,
 	}, nil
 }
 
-// SendEmail sends an email using SMTP
+// ResendEmailRequest represents the email request payload for Resend API
+type ResendEmailRequest struct {
+	From    string   `json:"from"`
+	To      []string `json:"to"`
+	Subject string   `json:"subject"`
+	Text    string   `json:"text,omitempty"`
+	HTML    string   `json:"html,omitempty"`
+}
+
+// ResendEmailResponse represents the response from Resend API
+type ResendEmailResponse struct {
+	ID      string `json:"id"`
+	From    string `json:"from"`
+	To      []string `json:"to"`
+	Created string `json:"created_at"`
+	Error   *struct {
+		Message string `json:"message"`
+		Status  int    `json:"status"`
+	} `json:"error,omitempty"`
+}
+
+// SendEmail sends an email using Resend API
 func SendEmail(to, subject, body string) error {
-	config, err := GetSMTPConfig()
+	config, err := GetResendConfig()
 	if err != nil {
-		return fmt.Errorf("SMTP configuration error: %v", err)
+		return fmt.Errorf("Resend configuration error: %v", err)
 	}
 
 	fmt.Printf("Attempting to send email to: %s with subject: %s\n", to, subject)
 
-	// Create message
-	message := fmt.Sprintf("From: %s\r\n", config.From)
-	message += fmt.Sprintf("To: %s\r\n", to)
-	message += fmt.Sprintf("Subject: %s\r\n", subject)
-	message += "MIME-Version: 1.0\r\n"
-	message += "Content-Type: text/plain; charset=UTF-8\r\n"
-	message += "\r\n"
-	message += body
-
-	// Setup authentication
-	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
-
-	// Use smtp.SendMail for simpler, more reliable SMTP handling
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	fmt.Printf("SMTP Config - Host: %s, Port: %d, From: %s, Username: %s\n", 
-		config.Host, config.Port, config.From, config.Username)
-	
-	// Test connection first with timeout (important for Render/cloud platforms)
-	fmt.Printf("Testing SMTP connection to %s...\n", addr)
-	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
-	if err != nil {
-		detailedErr := fmt.Errorf("SMTP connection failed - Cannot connect to %s: %v", addr, err)
-		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
-		fmt.Printf("Troubleshooting for Render:\n")
-		fmt.Printf("  1. Check if port %d is allowed in Render firewall\n", config.Port)
-		fmt.Printf("  2. Verify SMTP_HOST is correct: %s\n", config.Host)
-		fmt.Printf("  3. Check network connectivity from Render to SMTP server\n")
-		fmt.Printf("  4. Some SMTP providers block cloud IPs - consider using SendGrid/Mailgun\n")
-		return detailedErr
-	}
-	conn.Close()
-	fmt.Printf("SMTP connection test successful\n")
-	
-	// Send email with timeout protection
-	fmt.Printf("Sending email via SMTP...\n")
-	err = smtp.SendMail(addr, auth, config.From, []string{to}, []byte(message))
-	if err != nil {
-		detailedErr := fmt.Errorf("SMTP send failed - Host: %s, Port: %d, To: %s, Error: %v", 
-			config.Host, config.Port, to, err)
-		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
-		fmt.Printf("Troubleshooting for Render:\n")
-		fmt.Printf("  1. Verify SMTP_USERNAME and SMTP_PASSWORD are correct in Render environment variables\n")
-		fmt.Printf("  2. For Gmail: Ensure you're using an App Password (not regular password)\n")
-		fmt.Printf("  3. Check if SMTP server allows connections from Render's IP addresses\n")
-		fmt.Printf("  4. Verify SMTP_FROM matches SMTP_USERNAME\n")
-		fmt.Printf("  5. Some email providers block cloud platforms - try SendGrid or Mailgun\n")
-		return detailedErr
+	// Prepare email request
+	emailReq := ResendEmailRequest{
+		From:    config.From,
+		To:      []string{to},
+		Subject: subject,
+		Text:    body,
 	}
 
-	fmt.Printf("Email sent successfully to: %s\n", to)
+	// Convert to JSON
+	jsonData, err := json.Marshal(emailReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal email request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", "https://api.resend.com/emails", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
+
+	// Send request with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	fmt.Printf("Sending email via Resend API...\n")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Resend API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read Resend API response: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		var errorResp struct {
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(bodyBytes, &errorResp); err == nil {
+			return fmt.Errorf("Resend API error (status %d): %s", resp.StatusCode, errorResp.Message)
+		}
+		return fmt.Errorf("Resend API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse response
+	var emailResp ResendEmailResponse
+	if err := json.Unmarshal(bodyBytes, &emailResp); err != nil {
+		return fmt.Errorf("failed to parse Resend API response: %w", err)
+	}
+
+	if emailResp.Error != nil {
+		return fmt.Errorf("Resend API error: %s (status: %d)", emailResp.Error.Message, emailResp.Error.Status)
+	}
+
+	fmt.Printf("Email sent successfully to: %s (ID: %s)\n", to, emailResp.ID)
 	return nil
 }
 
-// SendEmailToMultiple sends email to multiple recipients
+// SendEmailToMultiple sends email to multiple recipients using Resend API
 func SendEmailToMultiple(recipients []string, subject, body string) error {
-	config, err := GetSMTPConfig()
+	config, err := GetResendConfig()
 	if err != nil {
-		return fmt.Errorf("SMTP configuration error: %v", err)
+		return fmt.Errorf("Resend configuration error: %v", err)
 	}
 
 	if len(recipients) == 0 {
@@ -119,47 +139,69 @@ func SendEmailToMultiple(recipients []string, subject, body string) error {
 
 	fmt.Printf("Attempting to send email to %d recipients with subject: %s\n", len(recipients), subject)
 
-	// Create message with multiple recipients
-	message := fmt.Sprintf("From: %s\r\n", config.From)
-	message += fmt.Sprintf("To: %s\r\n", strings.Join(recipients, ", "))
-	message += fmt.Sprintf("Subject: %s\r\n", subject)
-	message += "MIME-Version: 1.0\r\n"
-	message += "Content-Type: text/plain; charset=UTF-8\r\n"
-	message += "\r\n"
-	message += body
-
-	// Setup authentication
-	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
-
-	// Use smtp.SendMail for simpler, more reliable SMTP handling
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	fmt.Printf("SMTP Config - Host: %s, Port: %d, From: %s, Username: %s\n", 
-		config.Host, config.Port, config.From, config.Username)
-	
-	// Test connection first with timeout (important for Render/cloud platforms)
-	fmt.Printf("Testing SMTP connection to %s...\n", addr)
-	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
-	if err != nil {
-		detailedErr := fmt.Errorf("SMTP connection failed - Cannot connect to %s: %v", addr, err)
-		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
-		fmt.Printf("Troubleshooting for Render: Check firewall, network connectivity, and SMTP host\n")
-		return detailedErr
-	}
-	conn.Close()
-	fmt.Printf("SMTP connection test successful\n")
-	
-	// Send email
-	fmt.Printf("Sending email to %d recipients via SMTP...\n", len(recipients))
-	err = smtp.SendMail(addr, auth, config.From, recipients, []byte(message))
-	if err != nil {
-		detailedErr := fmt.Errorf("SMTP send failed - Host: %s, Port: %d, Recipients: %d, Error: %v", 
-			config.Host, config.Port, len(recipients), err)
-		fmt.Printf("SMTP ERROR: %v\n", detailedErr)
-		fmt.Printf("Troubleshooting for Render: Check SMTP credentials and server access\n")
-		return detailedErr
+	// Prepare email request
+	emailReq := ResendEmailRequest{
+		From:    config.From,
+		To:      recipients,
+		Subject: subject,
+		Text:    body,
 	}
 
-	fmt.Printf("Email sent successfully to %d recipients\n", len(recipients))
+	// Convert to JSON
+	jsonData, err := json.Marshal(emailReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal email request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", "https://api.resend.com/emails", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
+
+	// Send request with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	fmt.Printf("Sending email to %d recipients via Resend API...\n", len(recipients))
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Resend API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read Resend API response: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		var errorResp struct {
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(bodyBytes, &errorResp); err == nil {
+			return fmt.Errorf("Resend API error (status %d): %s", resp.StatusCode, errorResp.Message)
+		}
+		return fmt.Errorf("Resend API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse response
+	var emailResp ResendEmailResponse
+	if err := json.Unmarshal(bodyBytes, &emailResp); err != nil {
+		return fmt.Errorf("failed to parse Resend API response: %w", err)
+	}
+
+	if emailResp.Error != nil {
+		return fmt.Errorf("Resend API error: %s (status: %d)", emailResp.Error.Message, emailResp.Error.Status)
+	}
+
+	fmt.Printf("Email sent successfully to %d recipients (ID: %s)\n", len(recipients), emailResp.ID)
 	return nil
 }
 
@@ -558,7 +600,6 @@ Zenithive Leave Management System
 }
 
 // SendLeaveWithdrawalEmail sends notification when approved leave is withdrawn
-// SendLeaveWithdrawalEmail sends notification when a leave is withdrawn
 func SendLeaveWithdrawalEmail(
 	adminEmails []string,
 	employeeEmail, employeeName, leaveType, startDate, endDate string,

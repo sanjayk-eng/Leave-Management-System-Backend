@@ -16,19 +16,9 @@ services:
         sync: false
       - key: PORT
         value: 8082
-      - key: EMAIL_FROM
+      - key: RESEND_API_KEY
         sync: false
-      - key: EMAIL_PASSWORD
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USERNAME
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM
+      - key: RESEND_FROM
         sync: false
     autoDeploy: true
     healthCheckPath: /api/auth/login

@@ -146,6 +146,7 @@ func (r *Repository) GetAllEmployees(roleFilter, designationFilter, role string)
 				&emp.UpdatedAt,
 				&emp.DeletedAt,
 			)
+			fmt.Println("salary", emp.Salary)
 			if err != nil {
 				return nil, err
 			}
