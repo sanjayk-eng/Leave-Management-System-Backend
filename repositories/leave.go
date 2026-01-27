@@ -244,8 +244,8 @@ func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, yea
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE l.employee_id = $1
-		AND EXTRACT(MONTH FROM l.start_date) >= $2
-		AND EXTRACT(YEAR FROM l.start_date) >= $3
+		AND EXTRACT(MONTH FROM l.start_date) = $2
+		AND EXTRACT(YEAR FROM l.start_date) = $3
 		ORDER BY l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
@@ -274,8 +274,8 @@ func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID,
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE (e.manager_id = $1 OR l.employee_id = $1)
-		AND EXTRACT(MONTH FROM l.start_date) >= $2
-		AND EXTRACT(YEAR FROM l.start_date) >= $3
+		AND EXTRACT(MONTH FROM l.start_date) = $2
+		AND EXTRACT(YEAR FROM l.start_date) = $3
 		ORDER BY l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
@@ -303,8 +303,8 @@ func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResp
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE EXTRACT(MONTH FROM l.start_date) >= $1
-		AND EXTRACT(YEAR FROM l.start_date) >= $2
+		WHERE EXTRACT(MONTH FROM l.start_date) = $1
+		AND EXTRACT(YEAR FROM l.start_date) = $2
 		ORDER BY l.created_at DESC`
 
 	err := r.DB.Select(&result, query, month, year)
