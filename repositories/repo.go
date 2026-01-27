@@ -40,8 +40,8 @@ func (r *Repository) GetEmployeeByEmail(email string) (EmployeeAuthData, error) 
 			e.status
 		FROM Tbl_Employee e
 		JOIN Tbl_Role r ON e.role_id = r.id
-		WHERE e.email = $1
-		LIMIT 1 e.status = 'active'
+		WHERE e.email = $1 AND e.status = 'active'
+		LIMIT 1
 	`
 
 	err := r.DB.Get(&emp, query, email)
@@ -61,7 +61,7 @@ func (r *Repository) GetAllEmployees(roleFilter, designationFilter, role string)
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
         LEFT JOIN Tbl_Designation d ON e.designation_id = d.id
-        WHERE 1=1e.status = 'active'
+        WHERE 1=1 AND e.status = 'active'
     `
 	}
 	// Build dynamic query with optional filters
@@ -75,7 +75,7 @@ func (r *Repository) GetAllEmployees(roleFilter, designationFilter, role string)
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
         LEFT JOIN Tbl_Designation d ON e.designation_id = d.id
-        WHERE 1=1 e.status = 'active'
+        WHERE 1=1  AND e.status = 'active'
     `
 	}
 
@@ -404,7 +404,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
-        WHERE e.id = $1 e.status = 'active'
+        WHERE e.id = $1 AND  e.status = 'active'
     `
 
 	err := r.DB.QueryRow(query, empID).Scan(
