@@ -222,7 +222,6 @@ func (r *Repository) UpdateLeaveTiming(tx *sqlx.Tx, id int, timing string) error
 
 // rolde base get leave
 
-
 // GetAllEmployeeLeaveByMonthYear - Get employee leaves filtered by month and year
 func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
@@ -245,8 +244,8 @@ func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, yea
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE l.employee_id = $1
-		AND EXTRACT(MONTH FROM l.start_date) = $2
-		AND EXTRACT(YEAR FROM l.start_date) = $3
+		AND EXTRACT(MONTH FROM l.start_date) >= $2
+		AND EXTRACT(YEAR FROM l.start_date) >= $3
 		ORDER BY l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
@@ -275,15 +274,13 @@ func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID,
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE (e.manager_id = $1 OR l.employee_id = $1)
-		AND EXTRACT(MONTH FROM l.start_date) = $2
-		AND EXTRACT(YEAR FROM l.start_date) = $3
+		AND EXTRACT(MONTH FROM l.start_date) >= $2
+		AND EXTRACT(YEAR FROM l.start_date) >= $3
 		ORDER BY l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
 }
-
-
 
 // GetAllLeaveByMonthYear - Get all leaves filtered by month and year (Admin/HR/SuperAdmin)
 func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResponse, error) {
@@ -306,8 +303,8 @@ func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResp
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE EXTRACT(MONTH FROM l.start_date) = $1
-		AND EXTRACT(YEAR FROM l.start_date) = $2
+		WHERE EXTRACT(MONTH FROM l.start_date) >= $1
+		AND EXTRACT(YEAR FROM l.start_date) >= $2
 		ORDER BY l.created_at DESC`
 
 	err := r.DB.Select(&result, query, month, year)
@@ -325,16 +322,16 @@ func (r *Repository) UpdateLeaveType(tx *sqlx.Tx, leaveTypeID int, input models.
 	if err != nil {
 		return err
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-	
+
 	if rowsAffected == 0 {
 		return sql.ErrNoRows
 	}
-	
+
 	return nil
 }
 
@@ -377,12 +374,12 @@ func (r *Repository) GetMyLeavesByMonthYear(userID uuid.UUID, month, year int) (
 func (r *Repository) UpdateLeaveBalancesForEntitlementChange(tx *sqlx.Tx, leaveTypeID int, oldDefaultEntitlement, newDefaultEntitlement int, currentYear int) error {
 	// Calculate the difference
 	difference := float64(newDefaultEntitlement - oldDefaultEntitlement)
-	
+
 	// Only update if there's a change
 	if difference == 0 {
 		return nil
 	}
-	
+
 	// Update all leave balances for this leave type in current year
 	// Update opening: add difference to current opening
 	// Update closing: add difference to current closing (maintains available balance)
@@ -397,19 +394,19 @@ func (r *Repository) UpdateLeaveBalancesForEntitlementChange(tx *sqlx.Tx, leaveT
 		WHERE leave_type_id = $2 
 		AND year = $3
 	`
-	
+
 	result, err := tx.Exec(query, difference, leaveTypeID, currentYear)
 	if err != nil {
 		return err
 	}
-	
+
 	// Log how many balances were updated (optional, for debugging)
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
-		fmt.Printf("Updated %d leave balances for leave_type_id=%d (entitlement: %d → %d, year: %d)\n", 
+		fmt.Printf("Updated %d leave balances for leave_type_id=%d (entitlement: %d → %d, year: %d)\n",
 			rowsAffected, leaveTypeID, oldDefaultEntitlement, newDefaultEntitlement, currentYear)
 	}
-	
+
 	return nil
 }
 
@@ -421,25 +418,25 @@ func (r *Repository) DeleteLeaveType(tx *sqlx.Tx, leaveTypeID int) error {
 	if err != nil {
 		return err
 	}
-	
+
 	if count > 0 {
 		return sql.ErrNoRows // Using this to indicate constraint violation
 	}
-	
+
 	query := `DELETE FROM Tbl_Leave_type WHERE id = $1`
 	result, err := tx.Exec(query, leaveTypeID)
 	if err != nil {
 		return err
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-	
+
 	if rowsAffected == 0 {
 		return sql.ErrNoRows
 	}
-	
+
 	return nil
 }
