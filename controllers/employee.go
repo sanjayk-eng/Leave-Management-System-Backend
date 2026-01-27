@@ -276,7 +276,7 @@ func (h *HandlerFunc) DeleteEmployeeStatus(c *gin.Context) {
 	role, _ := c.Get("role")
 	r := role.(string)
 
-	if r != "SUPERADMIN" && r != "ADMIN" {
+	if r != "SUPERADMIN" && r != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
@@ -309,7 +309,7 @@ func (h *HandlerFunc) DeleteEmployeeStatus(c *gin.Context) {
 func (h *HandlerFunc) UpdateEmployeeManager(c *gin.Context) {
 	// 1️ Permission check
 	role := c.GetString("role")
-	if role != "SUPERADMIN" && role != "ADMIN" {
+	if role != "SUPERADMIN" && role != "ADMIN" && role != "HR" {
 		utils.RespondWithError(c, 401, "not permitted")
 		return
 	}
