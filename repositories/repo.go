@@ -404,7 +404,7 @@ func (r *Repository) GetEmployeeByID(empID uuid.UUID) (*models.EmployeeInput, er
             e.created_at, e.updated_at, e.deleted_at
         FROM Tbl_Employee e
         JOIN Tbl_Role r ON e.role_id = r.id
-        WHERE e.id = $1
+        WHERE e.id = $1 and status = "active"
     `
 
 	err := r.DB.QueryRow(query, empID).Scan(
