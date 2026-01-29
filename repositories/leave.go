@@ -222,7 +222,8 @@ func (r *Repository) UpdateLeaveTiming(tx *sqlx.Tx, id int, timing string) error
 
 // rolde base get leave
 
-// GetAllEmployeeLeaveByMonthYear - Get employee leaves filtered by month and year
+// GetAllEmployeeLeaveByMonthYear - Get employee leaves from given month/year onward (current + future).
+// When month/year is sent as base, returns leaves where start_date >= first day of that month.
 func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
@@ -244,15 +245,15 @@ func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, yea
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE l.employee_id = $1
-		AND EXTRACT(MONTH FROM l.start_date) = $2
-		AND EXTRACT(YEAR FROM l.start_date) = $3
-		ORDER BY l.created_at DESC`
+		AND l.start_date >= MAKE_DATE($3, $2, 1)
+		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
 }
 
-// GetAllleavebaseonassignManagerByMonthYear - Get manager's team leaves filtered by month and year
+// GetAllleavebaseonassignManagerByMonthYear - Get manager's team leaves from given month/year onward (current + future).
+// When month/year is sent as base, returns leaves where start_date >= first day of that month.
 func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
@@ -274,15 +275,15 @@ func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID,
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE (e.manager_id = $1 OR l.employee_id = $1)
-		AND EXTRACT(MONTH FROM l.start_date) = $2
-		AND EXTRACT(YEAR FROM l.start_date) = $3
-		ORDER BY l.created_at DESC`
+		AND l.start_date >= MAKE_DATE($3, $2, 1)
+		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
 }
 
-// GetAllLeaveByMonthYear - Get all leaves filtered by month and year (Admin/HR/SuperAdmin)
+// GetAllLeaveByMonthYear - Get all leaves from given month/year onward (current + future). Admin/HR/SuperAdmin.
+// When month/year is sent as base, returns leaves where start_date >= first day of that month.
 func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
@@ -303,9 +304,8 @@ func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResp
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE EXTRACT(MONTH FROM l.start_date) = $1
-		AND EXTRACT(YEAR FROM l.start_date) = $2
-		ORDER BY l.created_at DESC`
+		WHERE l.start_date >= MAKE_DATE($2, $1, 1)
+		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, month, year)
 	return result, err
@@ -335,7 +335,8 @@ func (r *Repository) UpdateLeaveType(tx *sqlx.Tx, leaveTypeID int, input models.
 	return nil
 }
 
-// GetMyLeavesByMonthYear - Get current user's leaves filtered by month and year
+// GetMyLeavesByMonthYear - Get current user's leaves from given month/year onward (current + future).
+// When month/year is sent as base, returns leaves where start_date >= first day of that month.
 func (r *Repository) GetMyLeavesByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
 	var result []models.LeaveResponse
 	query := `
@@ -357,9 +358,8 @@ func (r *Repository) GetMyLeavesByMonthYear(userID uuid.UUID, month, year int) (
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE l.employee_id = $1
-		AND EXTRACT(MONTH FROM l.start_date) = $2
-		AND EXTRACT(YEAR FROM l.start_date) = $3
-		ORDER BY l.created_at DESC`
+		AND l.start_date >= MAKE_DATE($3, $2, 1)
+		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
