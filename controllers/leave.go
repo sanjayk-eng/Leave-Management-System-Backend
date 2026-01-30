@@ -185,7 +185,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		leaveType, _ := h.Query.GetLeaveTypeById(input.LeaveTypeID)
 
 		recipients, err := h.Query.GetAdminAndEmployeeEmail(employeeID)
-		
+
 		if err != nil {
 			fmt.Printf("Failed to get notification recipients: %v\n", err)
 			return
@@ -773,22 +773,22 @@ func (h *HandlerFunc) GetAllMyLeave(c *gin.Context) {
 		return
 	}
 
-	// 3️⃣ Execute query to get user's own leaves
+	// 3️ Execute query to get user's own leaves
 	result, err := h.Query.GetMyLeavesByMonthYear(userID, month, year)
-	
-	// 4️⃣ Handle query errors
+
+	// 4️ Handle query errors
 	if err != nil {
 		fmt.Printf("GetAllMyLeave DB Error: %v\n", err)
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch my leaves: "+err.Error())
 		return
 	}
-	
-	// 5️⃣ Handle empty result
+
+	// 5️ Handle empty result
 	if result == nil {
 		result = []models.LeaveResponse{}
 	}
 
-	// 6️⃣ Return success with metadata
+	// 6️ Return success with metadata
 	c.JSON(http.StatusOK, gin.H{
 		"message": "My leaves fetched successfully",
 		"total":   len(result),

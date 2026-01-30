@@ -41,10 +41,10 @@ type ResendEmailRequest struct {
 
 // ResendEmailResponse represents the response from Resend API
 type ResendEmailResponse struct {
-	ID      string `json:"id"`
-	From    string `json:"from"`
+	ID      string   `json:"id"`
+	From    string   `json:"from"`
 	To      []string `json:"to"`
-	Created string `json:"created_at"`
+	Created string   `json:"created_at"`
 	Error   *struct {
 		Message string `json:"message"`
 		Status  int    `json:"status"`
@@ -220,7 +220,7 @@ Password: %s
 
 Please login to the system and change your password at your earliest convenience.
 
-Login URL: [https://zenithiveapp.netlify.app]
+Login URL: [https://leave.zenithive.com]
 
 If you have any questions, please contact your HR department.
 
@@ -536,7 +536,7 @@ For security reasons, we recommend:
 2. Change your password to something memorable
 3. Keep your password secure and do not share it with anyone
 
-Login URL: [https://zenithiveapp.netlify.app]
+Login URL: [https://leave.zenithive.com]
 
 Best regards,
 Zenithive HR Team
