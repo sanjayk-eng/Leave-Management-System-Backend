@@ -38,7 +38,7 @@ func CheckPassword(password, hashed string) bool {
 }
 
 // GenerateSecurePassword generates a secure random password
-// Format: 4 uppercase + 4 lowercase + 2 digits + 2 special chars = 12 characters
+// Format: 3 uppercase + 3 lowercase + 2 digits + 2 special chars = 12 characters
 // Example: ABCDefgh12@#
 func GenerateSecurePassword() (string, error) {
 	const (
@@ -48,14 +48,14 @@ func GenerateSecurePassword() (string, error) {
 		specialChars     = "@#$%&*!?"
 	)
 
-	// Generate 4 uppercase letters
-	uppercase, err := generateRandomString(uppercaseLetters, 4)
+	// Generate 3 uppercase letters
+	uppercase, err := generateRandomString(uppercaseLetters, 3)
 	if err != nil {
 		return "", err
 	}
 
-	// Generate 4 lowercase letters
-	lowercase, err := generateRandomString(lowercaseLetters, 4)
+	// Generate 3 lowercase letters
+	lowercase, err := generateRandomString(lowercaseLetters, 3)
 	if err != nil {
 		return "", err
 	}
