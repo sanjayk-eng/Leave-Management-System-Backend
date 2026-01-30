@@ -549,13 +549,13 @@ func (h *HandlerFunc) UpdateEmployeePassword(c *gin.Context) {
 		NewPassword string `json:"new_password" validate:"required,min=6"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
-		utils.RespondWithError(c, 400, "invalid input: password is required and must be at least 6 characters")
+		utils.RespondWithError(c, 400, "invalid input: password is required and must be at least 8 characters")
 		return
 	}
 
 	// 4️ Validate password length
-	if len(input.NewPassword) < 6 {
-		utils.RespondWithError(c, 400, "password must be at least 6 characters long")
+	if len(input.NewPassword) < 8 {
+		utils.RespondWithError(c, 400, "password must be at least 8  characters long")
 		return
 	}
 
