@@ -4,13 +4,14 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jung-kurt/gofpdf"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/service"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
@@ -18,13 +19,14 @@ import (
 
 // PayrollPreview represents preview data for a payroll run
 type PayrollPreview struct {
-	EmployeeID  uuid.UUID `json:"employee_id"`
-	Employee    string    `json:"employee"`
-	BasicSalary float64   `json:"basic_salary"`
-	WorkingDays int       `json:"working_days"`
-	AbsentDays  float64   `json:"absent_days"`
-	Deductions  float64   `json:"deductions"`
-	NetSalary   float64   `json:"net_salary"`
+	EmployeeID   uuid.UUID `json:"employee_id"`
+	Employee     string    `json:"employee"`
+	BasicSalary  float64   `json:"basic_salary"`
+	WorkingDays  int       `json:"working_days"`
+	PaidLeaves   float64   `json:paid_leaves"`
+	UnpaidLeaves float64   `json:"unpaid_leaves"`
+	Deductions   float64   `json:"deductions"`
+	NetSalary    float64   `json:"net_salary"`
 }
 
 // RunPayroll handles payroll preview
@@ -91,13 +93,15 @@ func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 
 		// Calculate absent days for this specific month only
 		// Handle cross-month leaves correctly
-		absentDays := service.CalculateAbsentDaysForMonth(h.Query.DB, emp.ID, input.Month, input.Year)
+		/*absentDays := service.CalculateAbsentDaysForMonth(h.Query.DB, emp.ID, input.Month, input.Year)
 		if absentDays < 0 {
 			utils.RespondWithError(c, 500, "Failed to calculate absent days")
 			return
-		}
+		}*/
 
-		deduction := salary / float64(workingDays) * absentDays
+		leaveSummary := service.CalculateAbsentDaysForMonth(h.Query.DB, emp.ID, input.Month, input.Year)
+
+		deduction := salary / float64(workingDays) * leaveSummary.UnpaidDays
 		net := salary - deduction
 
 		previews = append(previews, PayrollPreview{
@@ -105,9 +109,11 @@ func (h *HandlerFunc) RunPayroll(c *gin.Context) {
 			Employee:    emp.FullName,
 			BasicSalary: salary,
 			WorkingDays: workingDays,
-			AbsentDays:  absentDays,
-			Deductions:  deduction,
-			NetSalary:   net,
+			//AbsentDays:  absentDays,
+			PaidLeaves:   leaveSummary.PaidDays,   // Added for UI/Design
+			UnpaidLeaves: leaveSummary.UnpaidDays, // Renamed from AbsentDays
+			Deductions:   deduction,
+			NetSalary:    net,
 		})
 
 		totalPayroll += net
@@ -231,21 +237,23 @@ func (h *HandlerFunc) FinalizePayroll(c *gin.Context) {
 
 		// Calculate absent days for this specific month only
 		// Handle cross-month leaves correctly
-		absentDays := service.CalculateAbsentDaysForMonth(h.Query.DB, emp.ID, run.Month, run.Year)
-		if absentDays < 0 {
-			utils.RespondWithError(c, 500, "Failed to calculate absent days")
-			return
-		}
+		/*
+			absentDays := service.CalculateAbsentDaysForMonth(h.Query.DB, emp.ID, run.Month, run.Year)
+			if absentDays < 0 {
+				utils.RespondWithError(c, 500, "Failed to calculate absent days")
+				return
+			}*/
+		leaveSummary := service.CalculateAbsentDaysForMonth(h.Query.DB, emp.ID, run.Month, run.Year)
 
-		deduction := salary / float64(workingDays) * absentDays
+		deduction := salary / float64(workingDays) * leaveSummary.UnpaidDays
 		net := salary - deduction
 
 		pID := uuid.New()
 		_, err = tx.Exec(`
 			INSERT INTO Tbl_Payslip 
-			(id, payroll_run_id, employee_id, basic_salary, working_days, absent_days, deduction_amount, net_salary)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		`, pID, runID, emp.ID, salary, workingDays, absentDays, deduction, net)
+			(id, payroll_run_id, employee_id, basic_salary, working_days, paid_leaves,unpaid_leaves, deduction_amount, net_salary)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		`, pID, runID, emp.ID, salary, workingDays, leaveSummary.PaidDays, leaveSummary.UnpaidDays, deduction, net)
 
 		if err != nil {
 			utils.RespondWithError(c, 500, "Payslip insert failed: "+err.Error())
@@ -275,6 +283,319 @@ func (h *HandlerFunc) FinalizePayroll(c *gin.Context) {
 	})
 }
 
+type lineItem struct {
+	description string
+	amount      float64
+}
+
+type PDFConfig struct {
+	PrimaryColor []int
+	CompanyName  string
+	LogoPath     string
+}
+
+type PayslipReportData struct {
+	EmployeeID   string
+	EmployeeName string
+	Email        string
+	Month        string
+	Year         int
+	BasicSalary  float64
+	WorkingDays  int
+	PaidLeaves   float64
+	UnpaidLeaves float64
+	Deductions   float64
+	NetSalary    float64
+}
+
+// renderTable handles the repetitive task of drawing headers and rows
+
+func renderTable(pdf *gofpdf.Fpdf, title string, items []lineItem, r, g, b int) float64 {
+
+	// Section Header
+
+	pdf.SetFont("Arial", "B", 14)
+
+	pdf.SetFillColor(r, g, b)
+
+	pdf.SetTextColor(255, 255, 255)
+
+	pdf.CellFormat(0, 10, "  "+title, "", 1, "L", true, 0, "")
+
+	// Column Headers
+
+	pdf.SetTextColor(0, 0, 0)
+
+	pdf.SetFont("Arial", "B", 11)
+
+	pdf.SetFillColor(245, 245, 245)
+
+	pdf.CellFormat(130, 9, "  Description", "1", 0, "L", true, 0, "")
+
+	pdf.CellFormat(50, 9, "Amount (INR)", "1", 1, "C", true, 0, "")
+
+	// Rows
+
+	pdf.SetFont("Arial", "", 11)
+
+	var total float64
+
+	for _, item := range items {
+
+		pdf.CellFormat(130, 9, "  "+item.description, "1", 0, "L", false, 0, "")
+
+		pdf.CellFormat(50, 9, fmt.Sprintf("%.2f", item.amount), "1", 1, "R", false, 0, "")
+
+		total += item.amount
+
+	}
+
+	// Total Row
+
+	pdf.SetFont("Arial", "B", 11)
+
+	pdf.SetFillColor(245, 245, 245)
+
+	pdf.CellFormat(130, 9, "  TOTAL "+title, "1", 0, "L", true, 0, "")
+
+	pdf.CellFormat(50, 9, fmt.Sprintf("%.2f", total), "1", 1, "R", true, 0, "")
+
+	pdf.Ln(5)
+
+	return total
+
+}
+
+func renderHeaderSection(pdf *gofpdf.Fpdf, d PayslipReportData, config PDFConfig) {
+	// Top primary color bar
+	pdf.SetFillColor(config.PrimaryColor[0], config.PrimaryColor[1], config.PrimaryColor[2])
+	pdf.Rect(0, 0, 210, 4, "F")
+
+	// Handle Logo
+	if config.LogoPath != "" {
+		// We use a small offset from the top bar (10mm down)
+		// Adjust the '30' to make logo bigger or smaller
+		pdf.Image(config.LogoPath, 15, 10, 30, 0, false, "", 0, "")
+	}
+
+	// Set position for the Company Name and Statement
+	// We start at Y=12 to align roughly with the top of the logo
+	pdf.SetY(12)
+
+	// Company Name
+	pdf.SetFont("Arial", "B", 18) // Slightly smaller than 20 to look cleaner
+	pdf.SetTextColor(50, 50, 50)
+	pdf.CellFormat(0, 10, strings.ToUpper(config.CompanyName), "", 1, "R", false, 0, "")
+
+	// Subtitle / Date
+	pdf.SetFont("Arial", "", 10)
+	pdf.SetTextColor(100, 100, 100)
+	pdf.CellFormat(0, 5, "Salary Statement: "+d.Month+" "+fmt.Sprint(d.Year), "", 1, "R", false, 0, "")
+
+	// Vertical Spacer to move the cursor below the logo area before Employee Info starts
+	pdf.SetY(45)
+}
+
+func renderEmployeeSection(pdf *gofpdf.Fpdf, d PayslipReportData, config PDFConfig) {
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetFont("Arial", "B", 10)
+	pdf.SetTextColor(config.PrimaryColor[0], config.PrimaryColor[1], config.PrimaryColor[2])
+	pdf.CellFormat(0, 10, "  EMPLOYEE INFORMATION", "L", 1, "L", true, 0, "")
+	pdf.Ln(2)
+
+	pdf.SetFont("Arial", "", 9)
+	pdf.SetTextColor(50, 50, 50)
+
+	// Row 1 - Using CellFormat throughout for consistency
+	pdf.CellFormat(30, 7, "Employee Name:", "", 0, "L", false, 0, "")
+	pdf.SetFont("Arial", "B", 9)
+	pdf.CellFormat(70, 7, d.EmployeeName, "", 0, "L", false, 0, "")
+	pdf.SetFont("Arial", "", 9)
+	pdf.CellFormat(30, 7, "Employee ID:", "", 0, "L", false, 0, "")
+	pdf.CellFormat(0, 7, d.EmployeeID[:8], "", 1, "L", false, 0, "")
+
+	// Row 2
+	pdf.CellFormat(30, 7, "Email:", "", 0, "L", false, 0, "")
+	pdf.CellFormat(70, 7, d.Email, "", 0, "L", false, 0, "")
+	pdf.CellFormat(30, 7, "Working Days:", "", 0, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprint(d.WorkingDays), "", 1, "L", false, 0, "")
+	pdf.Ln(8)
+}
+
+func renderSummarySection(pdf *gofpdf.Fpdf, d PayslipReportData, config PDFConfig) {
+	pdf.SetX(130)
+	pdf.SetFont("Arial", "B", 10)
+	pdf.CellFormat(35, 10, "NET PAYABLE:", "B", 0, "L", false, 0, "")
+
+	pdf.SetTextColor(config.PrimaryColor[0], config.PrimaryColor[1], config.PrimaryColor[2])
+	pdf.SetFont("Arial", "B", 12)
+	pdf.CellFormat(30, 10, "INR "+fmt.Sprintf("%.2f", d.NetSalary), "B", 1, "R", false, 0, "")
+}
+
+func renderFooterSection(pdf *gofpdf.Fpdf, d PayslipReportData) {
+	pdf.SetY(270)
+	pdf.SetFont("Arial", "I", 8)
+	pdf.SetTextColor(150, 150, 150)
+	pdf.CellFormat(0, 5, "This is a computer-generated document and does not require a signature.", "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 5, fmt.Sprintf("System Ref: %s | Date: %s", d.EmployeeID[:12], time.Now().Format("02-Jan-2006")), "", 1, "C", false, 0, "")
+}
+func renderAttendanceSummary(pdf *gofpdf.Fpdf, d PayslipReportData, config PDFConfig) {
+	// Light gray background bar for the title, matching Employee Info style
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetFont("Arial", "B", 10)
+	pdf.SetTextColor(config.PrimaryColor[0], config.PrimaryColor[1], config.PrimaryColor[2])
+	pdf.CellFormat(0, 10, "  ATTENDANCE & LEAVE SUMMARY", "L", 1, "L", true, 0, "")
+	pdf.Ln(2)
+
+	// Reset Text Color for the table
+	pdf.SetTextColor(50, 50, 50)
+
+	// Table Header with consistent borders and bold font
+	pdf.SetFont("Arial", "B", 9)
+	// We use 180mm total width (typical for A4 with 15mm margins)
+	pdf.CellFormat(45, 8, "Working Days", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, "Paid Leaves", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, "Unpaid Leaves", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, "Days Present", "1", 1, "C", false, 0, "")
+
+	// Table Data
+	pdf.SetFont("Arial", "", 9)
+	presentDays := float64(d.WorkingDays) - d.UnpaidLeaves
+
+	pdf.CellFormat(45, 8, fmt.Sprintf("%d", d.WorkingDays), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, fmt.Sprintf("%.1f", d.PaidLeaves), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, fmt.Sprintf("%.1f", d.UnpaidLeaves), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, fmt.Sprintf("%.1f", presentDays), "1", 1, "C", false, 0, "")
+
+	pdf.Ln(5)
+}
+
+/*
+func renderAttendanceSummary(pdf *gofpdf.Fpdf, d PayslipReportData) {
+	pdf.SetFont("Arial", "B", 10)
+	pdf.CellFormat(0, 10, "ATTENDANCE SUMMARY", "", 1, "L", false, 0, "")
+
+	// Header
+	pdf.SetFont("Arial", "B", 9)
+	pdf.CellFormat(60, 8, "Total Working Days", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(60, 8, "Days Present", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(60, 8, "Days Absent", "1", 1, "C", false, 0, "")
+
+	// Data
+	pdf.SetFont("Arial", "", 9)
+	presentDays := float64(d.WorkingDays) - d.UnpaidLeaves
+	pdf.CellFormat(60, 8, fmt.Sprintf("%d days", d.WorkingDays), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(60, 8, fmt.Sprintf("%.1f days", presentDays), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(60, 8, fmt.Sprintf("%.1f days", d.UnpaidLeaves), "1", 1, "C", false, 0, "")
+	pdf.Ln(5)
+}*/
+
+func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
+	payslipID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		utils.RespondWithError(c, 400, "Invalid payslip ID")
+		return
+	}
+
+	// 1. FETCH BRANDING
+	var settings models.CompanySettings
+	_ = h.Query.DB.Get(&settings, `SELECT company_name, logo_path, primary_color FROM Tbl_Company_Settings LIMIT 1`)
+
+	// If no settings found or name is the generic "Company", override it
+	if err != nil || settings.CompanyName == "" || strings.EqualFold(settings.CompanyName, "Company") {
+		settings.CompanyName = "ZENITHIVE"
+	}
+
+	r, g, b := HexToRGB(settings.PrimaryColor)
+	config := PDFConfig{
+		PrimaryColor: []int{r, g, b},
+		CompanyName:  settings.CompanyName,
+		LogoPath:     settings.LogoPath,
+	}
+
+	// 2. FETCH PAYSLIP DATA
+	var p struct {
+		EmployeeID   uuid.UUID `db:"employee_id"`
+		EmployeeName string    `db:"full_name"`
+		Email        string    `db:"email"`
+		Month        int       `db:"month"`
+		Year         int       `db:"year"`
+		BasicSalary  float64   `db:"basic_salary"`
+		WorkingDays  int       `db:"working_days"`
+		PaidLeaves   float64   `db:"paid_leaves"`
+		UnpaidLeaves float64   `db:"unpaid_leaves"`
+		Deductions   float64   `db:"deduction_amount"`
+		NetSalary    float64   `db:"net_salary"`
+	}
+
+	err = h.Query.DB.Get(&p, `
+        SELECT e.id as employee_id, e.full_name, e.email, p.basic_salary, 
+               p.working_days,p.paid_leaves, p.unpaid_leaves, p.deduction_amount, p.net_salary,
+               pr.month, pr.year
+        FROM Tbl_Payslip p
+        JOIN Tbl_Employee e ON e.id = p.employee_id
+        JOIN Tbl_Payroll_run pr ON pr.id = p.payroll_run_id
+        WHERE p.id = $1`, payslipID)
+
+	if err != nil {
+		utils.RespondWithError(c, 404, "Payslip not found")
+		return
+	}
+
+	monthNames := []string{"", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
+	data := PayslipReportData{
+		EmployeeID:   p.EmployeeID.String(),
+		EmployeeName: p.EmployeeName,
+		Email:        p.Email,
+		Month:        monthNames[p.Month],
+		Year:         p.Year,
+		BasicSalary:  p.BasicSalary,
+		WorkingDays:  p.WorkingDays,
+		PaidLeaves:   p.PaidLeaves,
+		UnpaidLeaves: p.UnpaidLeaves,
+		Deductions:   p.Deductions,
+		NetSalary:    p.NetSalary,
+	}
+
+	// 3. GENERATE PDF
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.SetMargins(15, 15, 15)
+	pdf.AddPage()
+	pdf.SetAutoPageBreak(false, 0)
+
+	renderHeaderSection(pdf, data, config)
+	renderEmployeeSection(pdf, data, config)
+
+	// Using the lineItem approach for the tables
+	earnings := []lineItem{{description: "Basic Salary", amount: data.BasicSalary}}
+	deductions := []lineItem{{description: fmt.Sprintf("Absent Leave (%v Days)", data.UnpaidLeaves), amount: data.Deductions}}
+
+	renderTable(pdf, "EARNINGS", earnings, r, g, b)
+	renderTable(pdf, "DEDUCTIONS", deductions, 231, 76, 60) // Red for deductions
+
+	renderSummarySection(pdf, data, config)
+
+	renderAttendanceSummary(pdf, data, config)
+	renderFooterSection(pdf, data)
+
+	// 4. SERVE FILE
+	c.Header("Content-Type", "application/pdf")
+	c.Header("Content-Disposition", "inline; filename=payslip.pdf")
+	pdf.Output(c.Writer)
+}
+
+func HexToRGB(hex string) (int, int, int) {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return 0, 0, 0 // Return black if invalid
+	}
+	r, _ := strconv.ParseUint(hex[0:2], 16, 8)
+	g, _ := strconv.ParseUint(hex[2:4], 16, 8)
+	b, _ := strconv.ParseUint(hex[4:6], 16, 8)
+	return int(r), int(g), int(b)
+}
+
+/*
 // GetPayslipPDF - GET /api/payroll/payslips/:id/pdf
 func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
 	payslipID, err := uuid.Parse(c.Param("id"))
@@ -297,8 +618,8 @@ func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
 	}
 
 	err = h.Query.DB.Get(&payslip, `
-		SELECT e.id as employee_id, e.full_name, e.email, 
-		       p.basic_salary, p.working_days, p.absent_days, 
+		SELECT e.id as employee_id, e.full_name, e.email,
+		       p.basic_salary, p.working_days, p.absent_days,
 		       p.deduction_amount, p.net_salary,
 		       pr.month, pr.year
 		FROM Tbl_Payslip p
@@ -512,6 +833,7 @@ func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
 	// Serve PDF
 	c.File(pdfPath)
 }
+*/
 
 func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 	roleValue, ok := c.Get("role")
@@ -572,7 +894,8 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 		Year            int       `json:"year"`
 		BasicSalary     float64   `json:"basic_salary"`
 		WorkingDays     int       `json:"working_days"`
-		AbsentDays      float64   `json:"absent_days"`
+		PaidLeaves      float64   `json:paid_leaves"`
+		UnpaidLeaves    float64   `json:"unpaid_leaves"`
 		DeductionAmount float64   `json:"deduction_amount"`
 		NetSalary       float64   `json:"net_salary"`
 		PDFPath         string    `json:"pdf_path"`
@@ -593,7 +916,8 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 			&slip.Year,
 			&slip.BasicSalary,
 			&slip.WorkingDays,
-			&slip.AbsentDays,
+			&slip.PaidLeaves,
+			&slip.UnpaidLeaves,
 			&slip.DeductionAmount,
 			&slip.NetSalary,
 			&slip.PDFPath,

@@ -98,7 +98,8 @@ type PayslipInput struct {
 	EmployeeID      uuid.UUID `json:"employee_id" validate:"required"`
 	BasicSalary     *float64  `json:"basic_salary,omitempty"`
 	WorkingDays     *int      `json:"working_days,omitempty"`
-	AbsentDays      *float64  `json:"absent_days,omitempty"`
+	UnpaidLeaves    *float64  `json:"unpaid_leaves,omitempty"`
+	PaidLeaves      *float64  `json:"paid_leaves,omitempty"`
 	DeductionAmount *float64  `json:"deduction_amount,omitempty"`
 	NetSalary       *float64  `json:"net_salary,omitempty"`
 	PdfPath         *string   `json:"pdf_path,omitempty"`
@@ -107,7 +108,8 @@ type PayrollEmployeeResponse struct {
 	EmployeeName string  `json:"employee_name"`
 	BasicSalary  float64 `json:"basic_salary"`
 	WorkingDays  float64 `json:"working_days"` // float64 expected
-	AbsentDays   float64 `json:"absent_days"`
+	UnpaidLeaves float64 `json:"unpaid_leaves"`
+	PaidLeaves   float64 `json:"paid_leaves"`
 	Deductions   float64 `json:"deductions"`
 	NetSalary    float64 `json:"net_salary"`
 }
@@ -146,7 +148,8 @@ type FullPayslipResponse struct {
 	Year            int       `json:"year"`
 	BasicSalary     float64   `json:"basic_salary"`
 	WorkingDays     int       `json:"working_days"`
-	AbsentDays      float64   `json:"absent_days"`
+	PaidLeaves      float64   `json:"paid_leaves`
+	UnpaidLeaves    float64   `json:"unpaid_leaves"`
 	DeductionAmount float64   `json:"deduction_amount"`
 	NetSalary       float64   `json:"net_salary"`
 	PDFPath         string    `json:"pdf_path"`
@@ -154,9 +157,11 @@ type FullPayslipResponse struct {
 	CreatedAt       string    `json:"created_at"`
 }
 type LeaveResponse struct {
-	ID              string    `db:"id" json:"id"`
-	Employee        string    `db:"employee" json:"employee"`
-	LeaveType       string    `db:"leave_type" json:"leave_type"`
+	ID          string `db:"id" json:"id"`
+	Employee    string `db:"employee" json:"employee"`
+	LeaveType   string `db:"leave_type" json:"leave_type"`
+	LeaveTypeID int    `db:"leave_type_id" json:"leave_type_id"`
+
 	IsPaid          bool      `db:"is_paid" json:"is_paid"`
 	LeaveTimingType string    `db:"leave_timing_type" json:"leave_timing_type"`
 	LeaveTiming     string    `db:"leave_timing" json:"leave_timing"`
@@ -193,11 +198,20 @@ type CompanySettings struct {
 	AllowManagerAddLeave bool      `db:"allow_manager_add_leave" json:"allow_manager_add_leave"`
 	CreatedAt            string    `db:"created_at" json:"created_at"`
 	UpdatedAt            string    `db:"updated_at" json:"updated_at"`
+
+	CompanyName    string `db:"company_name" json:"company_name"`
+	LogoPath       string `db:"logo_path" json:"logo_path"`
+	PrimaryColor   string `db:"primary_color" json:"primary_color"`
+	SecondaryColor string `db:"secondary_color" json:"secondary_color"`
 }
 
 type CompanyField struct {
-	WorkingDaysPerMonth  int  `json:"working_days_per_month" binding:"required"`
-	AllowManagerAddLeave bool `json:"allow_manager_add_leave"`
+	WorkingDaysPerMonth  int    `form:"WorkingDaysPerMonth" json:"working_days_per_month"`
+	AllowManagerAddLeave bool   `form:"AllowManagerAddLeave" json:"allow_manager_add_leave"`
+	CompanyName          string `form:"CompanyName" json:"company_name"`
+	PrimaryColor         string `form:"PrimaryColor" json:"primary_color"`     // e.g., "#2c3e50"
+	SecondaryColor       string `form:"SecondaryColor" json:"secondary_color"` // e.g., "#ecf0f1"
+	LogoPath             string `json:"logo_path"`
 }
 
 // ----------------- LOG -----------------
@@ -309,4 +323,13 @@ type UpdateAssignmentRequest struct {
 	EquipmentID    uuid.UUID  `json:"equipment_id" validate:"required"`
 	Quantity       int        `json:"quantity" validate:"required,min=1"`
 	AssignedBy     uuid.UUID  `json:"assigned_by" validate:"required"` // Add this
+}
+
+// LeaveUpdateInput is used when an employee edits their own pending leave
+type LeaveUpdateInput struct {
+	LeaveTypeID   int       `json:"leave_type_id" validate:"required"`
+	LeaveTimingID int       `json:"leave_timing_id,omitempty"`
+	StartDate     time.Time `json:"start_date" validate:"required"`
+	EndDate       time.Time `json:"end_date" validate:"required"`
+	Reason        string    `json:"reason" validate:"required,min=10,max=500"`
 }

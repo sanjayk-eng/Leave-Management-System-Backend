@@ -50,20 +50,22 @@ func SetupRoutes(r *gin.Engine, h *controllers.HandlerFunc) {
 	leaves := r.Group("/api/leaves")
 	leaves.Use(middleware.AuthMiddleware(h))
 	{
-		leaves.POST("/apply", h.ApplyLeave)                        // Employee applies for leave
-		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy)    // Admin creates leave policy
-		leaves.PUT("/admin-update/policy/:id", h.UpdateLeavePolicy) // Admin, SuperAdmin, HR update leave policy
+		leaves.POST("/apply", h.ApplyLeave) // Employee applies for leave
+
+		leaves.PUT("/edit/:id", h.EditMyLeave)                         // New Route
+		leaves.POST("/admin-add/policy", h.AdminAddLeavePolicy)        // Admin creates leave policy
+		leaves.PUT("/admin-update/policy/:id", h.UpdateLeavePolicy)    // Admin, SuperAdmin, HR update leave policy
 		leaves.DELETE("/admin-delete/policy/:id", h.DeleteLeavePolicy) // Admin, SuperAdmin, HR delete leave policy
-		leaves.GET("/Get-All-Leave-Policy", h.GetAllLeavePolicies) // Get all leave policies
-		leaves.GET("/manager/history", h.GetManagerLeaveHistory)   // Manager gets team leave history
-		leaves.POST("/:id/action", h.ActionLeave)                  // Approve/Reject leave
-		leaves.DELETE("/:id/cancel", h.CancelLeave)                // Cancel pending leave (Employee/Admin)
-		leaves.POST("/:id/withdraw", h.WithdrawLeave)              // Withdraw approved leave (Admin/Manager)
-		leaves.GET("/all", h.GetAllLeaves)                         // Get all leaves (filtered by role)
-		leaves.GET("/my-leaves", h.GetAllMyLeave)                         // Get current user's own leaves with month/year filtering
-		leaves.GET("/:id", h.GetLeaveByID)                         // Get leave by ID (role-based access)
-		leaves.GET("/timming", h.GetLeaveTiming)                   // Get all Leave Timing
-		leaves.PUT("/timming", h.UpdateLeaveTiming)                // Update leave timing by super admin and admin
+		leaves.GET("/Get-All-Leave-Policy", h.GetAllLeavePolicies)     // Get all leave policies
+		leaves.GET("/manager/history", h.GetManagerLeaveHistory)       // Manager gets team leave history
+		leaves.POST("/:id/action", h.ActionLeave)                      // Approve/Reject leave
+		leaves.DELETE("/:id/cancel", h.CancelLeave)                    // Cancel pending leave (Employee/Admin)
+		leaves.POST("/:id/withdraw", h.WithdrawLeave)                  // Withdraw approved leave (Admin/Manager)
+		leaves.GET("/all", h.GetAllLeaves)                             // Get all leaves (filtered by role)
+		leaves.GET("/my-leaves", h.GetAllMyLeave)                      // Get current user's own leaves with month/year filtering
+		leaves.GET("/:id", h.GetLeaveByID)                             // Get leave by ID (role-based access)
+		leaves.GET("/timming", h.GetLeaveTiming)                       // Get all Leave Timing
+		leaves.PUT("/timming", h.UpdateLeaveTiming)                    // Update leave timing by super admin and admin
 	}
 
 	// ----------------- Leave Balances -----------------
