@@ -3,7 +3,6 @@ package utils
 import (
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"math/big"
 	"time"
 
@@ -33,7 +32,7 @@ func HashPassword(password string) (string, error) {
 // CheckPassword compares a plain password with hashed password
 func CheckPassword(password, hashed string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(password))
-	fmt.Println("----------------", err)
+
 	return err == nil
 }
 

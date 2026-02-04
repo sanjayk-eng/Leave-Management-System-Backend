@@ -742,7 +742,7 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 // GetAllMyLeave - GET /api/leaves/my
 // Get current user's own leaves with month/year filtering
 func (h *HandlerFunc) GetAllMyLeave(c *gin.Context) {
-	// 1️⃣ Get User ID with validation
+	// 1️ Get User ID with validation
 	userIDStr := c.GetString("user_id")
 	if userIDStr == "" {
 		utils.RespondWithError(c, http.StatusUnauthorized, "User ID not found in context")
@@ -754,7 +754,7 @@ func (h *HandlerFunc) GetAllMyLeave(c *gin.Context) {
 		return
 	}
 
-	// 2️⃣ Parse query parameters for month and year filtering
+	// 2️ Parse query parameters for month and year filtering
 	now := time.Now()
 	monthStr := c.DefaultQuery("month", fmt.Sprintf("%d", int(now.Month())))
 	yearStr := c.DefaultQuery("year", fmt.Sprintf("%d", now.Year()))
@@ -882,18 +882,18 @@ func (h *HandlerFunc) CancelLeave(c *gin.Context) {
 // 1. MANAGER initiates withdrawal → Status: WITHDRAWAL_PENDING (no balance restoration)
 // 2. ADMIN/SUPERADMIN finalizes → Status: WITHDRAWN (balance restored)
 func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
-	// 1️⃣ Get current user info
+	// 1️ Get current user info
 	role := c.GetString("role")
 	currentUserIDRaw, _ := c.Get("user_id")
 	currentUserID, _ := uuid.Parse(currentUserIDRaw.(string))
 
-	// 2️⃣ Permission check - Only Admin, SUPERADMIN, and Manager can withdraw
+	// 2️ Permission check - Only Admin, SUPERADMIN, and Manager can withdraw
 	if role != "SUPERADMIN" && role != "ADMIN" && role != "MANAGER" {
 		utils.RespondWithError(c, 403, "only SUPERADMIN, ADMIN, and MANAGER can withdraw approved leaves")
 		return
 	}
 
-	// 2️⃣A Check if MANAGER has permission to withdraw leaves
+	// 2️A Check if MANAGER has permission to withdraw leaves
 	if role == "MANAGER" {
 		hasPermission, err := h.Query.ChackManagerPermission()
 		if err != nil {
@@ -906,7 +906,7 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		}
 	}
 
-	// 3️⃣ Parse Leave ID
+	// 3️ Parse Leave ID
 	leaveIDStr := c.Param("id")
 	leaveID, err := uuid.Parse(leaveIDStr)
 	if err != nil {
@@ -914,13 +914,13 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		return
 	}
 
-	// 4️⃣ Parse optional reason from request body
+	// 4️ Parse optional reason from request body
 	var input struct {
 		Reason string `json:"reason"`
 	}
 	c.ShouldBindJSON(&input)
 
-	// 5️⃣ Start transaction
+	// 5️ Start transaction
 	tx, err := h.Query.DB.Beginx()
 	if err != nil {
 		utils.RespondWithError(c, 500, "failed to start transaction")
@@ -928,7 +928,7 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	// 6️⃣ Fetch leave details
+	// 6️ Fetch leave details
 	var leave models.Leave
 	err = tx.Get(&leave, `
 		SELECT id, employee_id, leave_type_id, start_date, end_date, days, status, created_at
@@ -945,13 +945,13 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		return
 	}
 
-	// 7️⃣ Prevent withdrawing own leave
+	// 7️ Prevent withdrawing own leave
 	if leave.EmployeeID == currentUserID {
 		utils.RespondWithError(c, 403, "you cannot withdraw your own leave. Please contact your manager or admin")
 		return
 	}
 
-	// 8️⃣ MANAGER validation
+	// 8️ MANAGER validation
 	if role == "MANAGER" {
 		// Verify reporting relationship
 		var managerID uuid.UUID
@@ -972,7 +972,7 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		}
 	}
 
-	// 9️⃣ ADMIN/SUPERADMIN validation
+	// 9️ ADMIN/SUPERADMIN validation
 	if role == "ADMIN" || role == "SUPERADMIN" {
 		// Admin can act on APPROVED or WITHDRAWAL_PENDING leaves
 		if leave.Status != "APPROVED" && leave.Status != "WITHDRAWAL_PENDING" {
@@ -1113,7 +1113,7 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 		// Send final withdrawal notification (async)
 		if empDetails.Email != "" && leaveTypeName != "" && withdrawnByName != "" {
 			go func(email, name, leaveType, startDate, endDate string, days float64, withdrawnBy, withdrawnRole, reason string) {
-				fmt.Printf("📧 Sending withdrawal email to %s...\n", email)
+				fmt.Printf(" Sending withdrawal email to %s...\n", email)
 				err := utils.SendLeaveWithdrawalEmail(
 					admins,
 					email,
@@ -1127,9 +1127,9 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 					reason,
 				)
 				if err != nil {
-					fmt.Printf("❌ Failed to send withdrawal email: %v\n", err)
+					fmt.Printf(" Failed to send withdrawal email: %v\n", err)
 				} else {
-					fmt.Printf("✅ Withdrawal email sent successfully to %s\n", email)
+					fmt.Printf(" Withdrawal email sent successfully to %s\n", email)
 				}
 			}(empDetails.Email, empDetails.FullName, leaveTypeName,
 				leave.StartDate.Format("2006-01-02"),
@@ -1659,6 +1659,30 @@ func (h *HandlerFunc) EditMyLeave(c *gin.Context) {
 	}
 	var id int
 	id = input.LeaveTimingID
+
+	// Validate Reason
+	input.Reason = strings.TrimSpace(input.Reason)
+	if len(input.Reason) < 10 {
+		utils.RespondWithError(c, 400, "Leave reason must be at least 10 characters long")
+		return
+	}
+	if len(input.Reason) > 500 {
+		utils.RespondWithError(c, 400, "Leave reason is too long. Maximum 500 characters allowed")
+		return
+	}
+
+	// // Validate Dates
+	// now := time.Now()
+	// cutoff := now.Add(-12 * time.Hour)
+
+	// if input.StartDate.Before(cutoff) {
+	// 	utils.RespondWithError(c, 400, "Start date cannot be earlier than today")
+	// 	return
+	// }
+	if input.EndDate.Before(input.StartDate) {
+		utils.RespondWithError(c, 400, "End date cannot be earlier than start date")
+		return
+	}
 
 	// 4. Execute Transaction
 	err = common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
