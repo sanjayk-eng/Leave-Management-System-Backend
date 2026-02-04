@@ -411,8 +411,6 @@ func renderEmployeeSection(pdf *gofpdf.Fpdf, d PayslipReportData, config PDFConf
 	pdf.SetFont("Arial", "B", 9)
 	pdf.CellFormat(70, 7, d.EmployeeName, "", 0, "L", false, 0, "")
 	pdf.SetFont("Arial", "", 9)
-	pdf.CellFormat(30, 7, "Employee ID:", "", 0, "L", false, 0, "")
-	pdf.CellFormat(0, 7, d.EmployeeID[:8], "", 1, "L", false, 0, "")
 
 	// Row 2
 	pdf.CellFormat(30, 7, "Email:", "", 0, "L", false, 0, "")
