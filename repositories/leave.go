@@ -245,13 +245,14 @@ func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, yea
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE l.employee_id = $1
-		AND l.start_date >= MAKE_DATE($3, $2, 1)
+		AND l.start_date >= ($3 || '-' || $2 || '-01')::date
 		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
 	return result, err
 }
 
+// MAKE_DATE($3, $2, 1)
 // GetAllleavebaseonassignManagerByMonthYear - Get manager's team leaves from given month/year onward (current + future).
 // When month/year is sent as base, returns leaves where start_date >= first day of that month.
 func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID, month, year int) ([]models.LeaveResponse, error) {
@@ -275,7 +276,7 @@ func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID,
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
 		WHERE (e.manager_id = $1 OR l.employee_id = $1)
-		AND l.start_date >= MAKE_DATE($3, $2, 1)
+		AND l.start_date >= ($3 || '-' || $2 || '-01')::date
 		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, userID, month, year)
@@ -291,6 +292,7 @@ func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResp
 			l.id,
 			e.full_name AS employee,
 			lt.name AS leave_type,
+			l.leave_type_id,
 			lt.is_paid AS is_paid,
 			COALESCE(h.type, 'FULL') AS leave_timing_type,
 			COALESCE(h.timing, 'Full Day') AS leave_timing,
@@ -304,7 +306,7 @@ func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResp
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE l.start_date >= MAKE_DATE($2, $1, 1)
+		WHERE l.start_date >= ($2 || '-' || $1 || '-01')::date
 		ORDER BY l.start_date ASC, l.created_at DESC`
 
 	err := r.DB.Select(&result, query, month, year)
@@ -345,6 +347,7 @@ func (r *Repository) GetMyLeavesByMonthYear(userID uuid.UUID, month, year int) (
 			e.full_name AS employee,
 			lt.name AS leave_type,
 			lt.is_paid AS is_paid,
+			l.leave_type_id,
 			COALESCE(h.type, 'FULL') AS leave_timing_type,
 			COALESCE(h.timing, 'Full Day') AS leave_timing,
 			l.start_date,
@@ -436,6 +439,48 @@ func (r *Repository) DeleteLeaveType(tx *sqlx.Tx, leaveTypeID int) error {
 
 	if rowsAffected == 0 {
 		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (r *Repository) UpdatePendingLeave(tx *sqlx.Tx, leaveID uuid.UUID, empID uuid.UUID, input models.LeaveUpdateInput, NewDays float64) error {
+
+	// 2. RE-CALCULATE DAYS using your existing service
+	// Ensure you pass the correct timingID (1, 2, or 3)
+
+	query := `
+        UPDATE Tbl_Leave
+        SET 
+            start_date = $1, 
+            end_date = $2, 
+            leave_type_id = $3, 
+            reason = $4,
+			days = $5,           
+            half_id = $6,
+            updated_at = NOW()
+        WHERE id = $7 
+          AND employee_id = $8 
+          AND status = 'Pending'`
+
+	result, err := tx.Exec(query,
+		input.StartDate,
+		input.EndDate,
+		input.LeaveTypeID,
+		input.Reason,
+		NewDays,
+		input.LeaveTimingID,
+		leaveID,
+		empID,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Check if any row was actually updated
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("leave cannot be edited: either it does not exist, you don't own it, or it is already processed")
 	}
 
 	return nil

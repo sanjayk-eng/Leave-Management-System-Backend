@@ -79,9 +79,16 @@ func CalculateWorkingDaysWithTiming(Query *repositories.Repository, tx *sqlx.Tx,
 	}
 }
 
+type LeaveSummary struct {
+	PaidDays   float64
+	UnpaidDays float64
+}
+
 // CalculateAbsentDaysForMonth calculates the number of absent days for a specific month
 // Now handles timing-based leaves (half days vs full days) correctly
 // Uses the pre-calculated days from leave records which include timing considerations
+
+/*
 func CalculateAbsentDaysForMonth(db *sqlx.DB, employeeID uuid.UUID, month, year int) float64 {
 	// Get first and last day of the payroll month
 	firstDay := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
@@ -103,7 +110,7 @@ func CalculateAbsentDaysForMonth(db *sqlx.DB, employeeID uuid.UUID, month, year 
 		FROM Tbl_Leave l
 		JOIN Tbl_Leave_type lt ON l.leave_type_id = lt.id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
-		WHERE l.employee_id=$1 
+		WHERE l.employee_id=$1
 		AND l.status='APPROVED'
 		AND lt.is_paid = false
 		AND l.start_date <= $2
@@ -190,6 +197,85 @@ func CalculateAbsentDaysForMonth(db *sqlx.DB, employeeID uuid.UUID, month, year 
 		employeeID, month, year, totalAbsentDays)
 
 	return totalAbsentDays
+}*/
+
+func CalculateAbsentDaysForMonth(db *sqlx.DB, employeeID uuid.UUID, month, year int) LeaveSummary {
+	// 1. Define time boundaries
+	firstDay := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	lastDay := firstDay.AddDate(0, 1, -1)
+
+	// 2. Optimization: Fetch holidays once for the period
+	var holidays []time.Time
+	_ = db.Select(&holidays, `SELECT date FROM Tbl_Holiday WHERE date >= $1 AND date <= $2`, firstDay, lastDay)
+
+	holidayMap := make(map[string]bool)
+	for _, h := range holidays {
+		holidayMap[h.Format("2006-01-02")] = true
+	}
+
+	// 3. Updated SQL: Removed "is_paid = false" to get ALL approved leaves
+	type LeaveRecord struct {
+		StartDate  time.Time `db:"start_date"`
+		EndDate    time.Time `db:"end_date"`
+		Days       float64   `db:"days"`
+		IsPaid     bool      `db:"is_paid"` // Now fetching this field
+		TimingType *string   `db:"timing_type"`
+	}
+
+	var leaves []LeaveRecord
+	err := db.Select(&leaves, `
+        SELECT l.start_date, l.end_date, l.days, lt.is_paid, h.type as timing_type
+        FROM Tbl_Leave l
+        JOIN Tbl_Leave_type lt ON l.leave_type_id = lt.id
+        LEFT JOIN Tbl_Half h ON l.half_id = h.id
+        WHERE l.employee_id=$1 
+        AND l.status='APPROVED'
+        AND l.start_date <= $2
+        AND l.end_date >= $3
+    `, employeeID, lastDay, firstDay)
+
+	if err != nil {
+		fmt.Printf("Error fetching leaves: %v\n", err)
+		return LeaveSummary{}
+	}
+
+	summary := LeaveSummary{}
+
+	// 4. Calculate days
+	for _, leave := range leaves {
+		overlapStart := leave.StartDate
+		if overlapStart.Before(firstDay) {
+			overlapStart = firstDay
+		}
+
+		overlapEnd := leave.EndDate
+		if overlapEnd.After(lastDay) {
+			overlapEnd = lastDay
+		}
+
+		actualDaysInMonth := 0.0
+		for d := overlapStart; !d.After(overlapEnd); d = d.AddDate(0, 0, 1) {
+			// Skip weekends and holidays
+			if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday || holidayMap[d.Format("2006-01-02")] {
+				continue
+			}
+
+			if leave.StartDate.Equal(leave.EndDate) && leave.Days < 1.0 {
+				actualDaysInMonth += leave.Days
+			} else {
+				actualDaysInMonth += 1.0
+			}
+		}
+
+		// 5. Categorize based on IsPaid flag
+		if leave.IsPaid {
+			summary.PaidDays += actualDaysInMonth
+		} else {
+			summary.UnpaidDays += actualDaysInMonth
+		}
+	}
+
+	return summary
 }
 
 // LeaveBalanceData represents raw balance data from database
@@ -204,8 +290,8 @@ type LeaveBalanceData struct {
 
 // LeaveTypeData represents leave type information
 type LeaveTypeData struct {
-	LeaveTypeID       int
-	LeaveTypeName     string
+	LeaveTypeID        int
+	LeaveTypeName      string
 	DefaultEntitlement float64
 }
 

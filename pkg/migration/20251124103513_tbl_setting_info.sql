@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS Tbl_Company_Settings (
     allow_manager_add_leave BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+    company_name VARCHAR(255) DEFAULT 'ZENITHIVE',
+    logo_path TEXT DEFAULT '',
+    primary_color VARCHAR(7) DEFAULT '#2980b9',
+    secondary_color VARCHAR(7) DEFAULT '#2ecc71'
 );
 
 -- +goose Down

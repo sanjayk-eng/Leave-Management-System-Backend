@@ -185,7 +185,7 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		leaveType, _ := h.Query.GetLeaveTypeById(input.LeaveTypeID)
 
 		recipients, err := h.Query.GetAdminAndEmployeeEmail(employeeID)
-		
+
 		if err != nil {
 			fmt.Printf("Failed to get notification recipients: %v\n", err)
 			return
@@ -681,7 +681,6 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 		utils.RespondWithError(c, http.StatusBadRequest, "Invalid user ID format: "+err.Error())
 		return
 	}
-
 	// 2️ Parse query parameters for month and year filtering
 	now := time.Now()
 	monthStr := c.DefaultQuery("month", fmt.Sprintf("%d", int(now.Month())))
@@ -703,6 +702,7 @@ func (h *HandlerFunc) GetAllLeaves(c *gin.Context) {
 
 	// 3️ Execute query based on role with month/year filtering
 	var result []models.LeaveResponse
+
 	switch role {
 	case constant.ROLE_EMPLOYEE:
 		// Employees can only see their own leaves
@@ -775,14 +775,14 @@ func (h *HandlerFunc) GetAllMyLeave(c *gin.Context) {
 
 	// 3️⃣ Execute query to get user's own leaves
 	result, err := h.Query.GetMyLeavesByMonthYear(userID, month, year)
-	
+
 	// 4️⃣ Handle query errors
 	if err != nil {
 		fmt.Printf("GetAllMyLeave DB Error: %v\n", err)
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch my leaves: "+err.Error())
 		return
 	}
-	
+
 	// 5️⃣ Handle empty result
 	if result == nil {
 		result = []models.LeaveResponse{}
@@ -1637,4 +1637,43 @@ func (h *HandlerFunc) DeleteLeavePolicy(c *gin.Context) {
 		"message": "Leave policy deleted successfully",
 		"id":      leaveTypeID,
 	})
+}
+
+func (h *HandlerFunc) EditMyLeave(c *gin.Context) {
+	// 1. Get Leave ID from URL
+	leaveID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		utils.RespondWithError(c, 400, "Invalid Leave ID")
+		return
+	}
+
+	// 2. Get Current Employee ID from Context
+	empIDRaw, _ := c.Get("user_id")
+	empID, _ := uuid.Parse(empIDRaw.(string))
+
+	// 3. Bind Input (JSON)
+	var input models.LeaveUpdateInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		utils.RespondWithError(c, 400, "Invalid input data"+err.Error())
+		return
+	}
+	var id int
+	id = input.LeaveTimingID
+
+	// 4. Execute Transaction
+	err = common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
+		newDays, err := service.CalculateWorkingDaysWithTiming(h.Query, tx, input.StartDate, input.EndDate, id)
+		if err != nil {
+			return err
+		}
+		return h.Query.UpdatePendingLeave(tx, leaveID, empID, input, newDays)
+	})
+
+	if err != nil {
+		// This will trigger if the leave is no longer PENDING
+		utils.RespondWithError(c, 403, err.Error())
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "Leave updated successfully"})
 }
