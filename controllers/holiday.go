@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 // AddHoliday handles adding a new holiday
 func (s *HandlerFunc) AddHoliday(c *gin.Context) {
 	role, _ := c.Get("role")
-	if role.(string) != constant.ROLE_SUPER_ADMIN || role.(string) != constant.ROLE_ADMIN || role.(string) != constant.ROLE_HR {
+	fmt.Println("role", role)
+	if role.(string) != constant.ROLE_SUPER_ADMIN && role.(string) != constant.ROLE_ADMIN && role.(string) != constant.ROLE_HR {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
 		return
 	}
