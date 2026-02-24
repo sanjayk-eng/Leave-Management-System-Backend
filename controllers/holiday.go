@@ -110,7 +110,7 @@ func (s *HandlerFunc) GetHolidays(c *gin.Context) {
 // DeleteHoliday removes a holiday
 func (s *HandlerFunc) DeleteHoliday(c *gin.Context) {
 	role, _ := c.Get("role")
-	if role.(string) != constant.ROLE_SUPER_ADMIN || role.(string) != constant.ROLE_ADMIN || role.(string) != constant.ROLE_HR {
+	if role.(string) != constant.ROLE_SUPER_ADMIN && role.(string) != constant.ROLE_ADMIN && role.(string) != constant.ROLE_HR {
 		utils.RespondWithError(c, http.StatusUnauthorized, "not permitted")
 		return
 	}
