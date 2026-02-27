@@ -239,11 +239,13 @@ func (r *Repository) GetAllEmployeeLeaveByMonthYear(userID uuid.UUID, month, yea
 			l.days,
 			COALESCE(l.reason, '') AS reason,
 			l.status,
-			l.created_at AS applied_at
+			l.created_at AS applied_at,
+			approver.full_name AS approval_name
 		FROM Tbl_Leave l
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		LEFT JOIN Tbl_Employee approver ON l.approved_by = approver.id
 		WHERE l.employee_id = $1
 		AND l.start_date >= ($3 || '-' || $2 || '-01')::date
 		ORDER BY l.start_date ASC, l.created_at DESC`
@@ -270,11 +272,13 @@ func (r *Repository) GetAllleavebaseonassignManagerByMonthYear(userID uuid.UUID,
 			l.days,
 			COALESCE(l.reason, '') AS reason,
 			l.status,
-			l.created_at AS applied_at
+			l.created_at AS applied_at,
+			approver.full_name AS approval_name
 		FROM Tbl_Leave l
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		LEFT JOIN Tbl_Employee approver ON l.approved_by = approver.id
 		WHERE (e.manager_id = $1 OR l.employee_id = $1)
 		AND l.start_date >= ($3 || '-' || $2 || '-01')::date
 		ORDER BY l.start_date ASC, l.created_at DESC`
@@ -301,11 +305,13 @@ func (r *Repository) GetAllLeaveByMonthYear(month, year int) ([]models.LeaveResp
 			l.days,
 			COALESCE(l.reason, '') AS reason,
 			l.status,
-			l.created_at AS applied_at
+			l.created_at AS applied_at,
+			approver.full_name AS approval_name
 		FROM Tbl_Leave l
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		LEFT JOIN Tbl_Employee approver ON l.approved_by = approver.id
 		WHERE l.start_date >= ($2 || '-' || $1 || '-01')::date
 		ORDER BY l.start_date ASC, l.created_at DESC`
 
@@ -355,11 +361,13 @@ func (r *Repository) GetMyLeavesByMonthYear(userID uuid.UUID, month, year int) (
 			l.days,
 			COALESCE(l.reason, '') AS reason,
 			l.status,
-			l.created_at AS applied_at
+			l.created_at AS applied_at,
+			approver.full_name AS approval_name
 		FROM Tbl_Leave l
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		LEFT JOIN Tbl_Employee approver ON l.approved_by = approver.id
 		WHERE l.employee_id = $1
 		AND l.start_date >= MAKE_DATE($3, $2, 1)
 		ORDER BY l.start_date ASC, l.created_at DESC`

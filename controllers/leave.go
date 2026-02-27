@@ -1195,11 +1195,13 @@ func (h *HandlerFunc) GetManagerLeaveHistory(c *gin.Context) {
 			l.days,
 			COALESCE(l.reason, '') AS reason,
 			l.status,
-			l.created_at AS applied_at
+			l.created_at AS applied_at,
+			approver.full_name AS approval_name
 		FROM Tbl_Leave l
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		LEFT JOIN Tbl_Employee approver ON l.approved_by = approver.id
 		WHERE e.manager_id = $1
 		ORDER BY l.created_at DESC
 	`
@@ -1259,11 +1261,13 @@ func (h *HandlerFunc) GetLeaveByID(c *gin.Context) {
 			l.days,
 			COALESCE(l.reason, '') AS reason,
 			l.status,
-			l.created_at AS applied_at
+			l.created_at AS applied_at,
+			approver.full_name AS approval_name
 		FROM Tbl_Leave l
 		INNER JOIN Tbl_Employee e ON l.employee_id = e.id
 		INNER JOIN Tbl_Leave_Type lt ON lt.id = l.leave_type_id
 		LEFT JOIN Tbl_Half h ON l.half_id = h.id
+		LEFT JOIN Tbl_Employee approver ON l.approved_by = approver.id
 		WHERE l.id = $1
 	`
 

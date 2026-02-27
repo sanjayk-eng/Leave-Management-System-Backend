@@ -171,6 +171,7 @@ type LeaveResponse struct {
 	Reason          string    `db:"reason" json:"reason"`
 	Status          string    `db:"status" json:"status"`
 	AppliedAt       time.Time `db:"applied_at" json:"applied_at"`
+	ApprovalName    *string   `db:"approval_name" json:"approval_name,omitempty"`
 }
 
 var Validate *validator.Validate
