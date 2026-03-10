@@ -2,20 +2,21 @@ package repositories
 
 import (
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 )
 
 // ------------------ DESIGNATION OPERATIONS ------------------
 
 // CreateDesignation inserts a new designation
-func (r *Repository) CreateDesignation(input *models.DesignationInput) (string, error) {
+func (r *Repository) CreateDesignation(tx *sqlx.Tx, input *models.DesignationInput) (string, error) {
 	var id string
 	query := `
 		INSERT INTO Tbl_Designation (designation_name, description)
 		VALUES ($1, $2)
 		RETURNING id
 	`
-	err := r.DB.QueryRow(query, input.DesignationName, input.Description).Scan(&id)
+	err := tx.QueryRow(query, input.DesignationName, input.Description).Scan(&id)
 	return id, err
 }
 
@@ -47,20 +48,20 @@ func (r *Repository) GetDesignationByID(id uuid.UUID) (*models.Designation, erro
 }
 
 // UpdateDesignation updates an existing designation
-func (r *Repository) UpdateDesignation(id uuid.UUID, input *models.DesignationInput) error {
+func (r *Repository) UpdateDesignation(tx *sqlx.Tx, id uuid.UUID, input *models.DesignationInput) error {
 	query := `
 		UPDATE Tbl_Designation
 		SET designation_name = $1, description = $2
 		WHERE id = $3
 	`
-	_, err := r.DB.Exec(query, input.DesignationName, input.Description, id)
+	_, err := tx.Exec(query, input.DesignationName, input.Description, id)
 	return err
 }
 
 // DeleteDesignation deletes a designation by ID
 // Due to ON DELETE SET NULL constraint, employee designation_id will be set to NULL automatically
-func (r *Repository) DeleteDesignation(id uuid.UUID) error {
+func (r *Repository) DeleteDesignation(tx *sqlx.Tx, id uuid.UUID) error {
 	query := `DELETE FROM Tbl_Designation WHERE id = $1`
-	_, err := r.DB.Exec(query, id)
+	_, err := tx.Exec(query, id)
 	return err
 }

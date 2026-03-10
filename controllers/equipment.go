@@ -57,8 +57,8 @@ func (h *HandlerFunc) CreateCategory(c *gin.Context) {
 		if err := h.Query.CreateCategory(tx, req); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create category: "+err.Error())
 		}
-		logData := utils.NewCommon(constant.EquipmentCategory, constant.ActionCreate, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.EquipmentCategory, constant.ActionCreate, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 		return nil
@@ -137,8 +137,8 @@ func (h *HandlerFunc) DeleteCategory(c *gin.Context) {
 		if err := h.Query.DeleteCategory(tx, categoryID); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to delete category: "+err.Error())
 		}
-		logData := utils.NewCommon(constant.EquipmentCategory, constant.ActionDelete, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.EquipmentCategory, constant.ActionDelete, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 		return nil
@@ -202,8 +202,8 @@ func (h *HandlerFunc) UpdateCategory(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to update category: "+err.Error())
 		}
 
-		logData := utils.NewCommon(constant.EquipmentCategory, constant.ActionUpdate, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.EquipmentCategory, constant.ActionUpdate, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 
@@ -263,8 +263,8 @@ func (h *HandlerFunc) CreateEquipment(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create equipment: "+err.Error())
 		}
 
-		logData := utils.NewCommon(constant.Equipment, constant.ActionCreate, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.Equipment, constant.ActionCreate, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 
@@ -401,8 +401,8 @@ func (h *HandlerFunc) UpdateEquipment(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to update equipment: "+err.Error())
 		}
 
-		logData := utils.NewCommon(constant.Equipment, constant.ActionUpdate, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.Equipment, constant.ActionUpdate, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 
@@ -456,8 +456,8 @@ func (h *HandlerFunc) DeleteEquipment(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to delete equipment: "+err.Error())
 		}
 
-		logData := utils.NewCommon(constant.Equipment, constant.ActionDelete, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.Equipment, constant.ActionDelete, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 
@@ -509,8 +509,8 @@ func (h *HandlerFunc) AssignEquipment(c *gin.Context) {
 		if err := h.Query.AssignEquipment(tx, req); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to assign equipment: "+err.Error())
 		}
-		logData := utils.NewCommon(constant.EquipmentAssign, constant.ActionCreate, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.EquipmentAssign, constant.ActionCreate, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 		return nil
@@ -592,8 +592,8 @@ func (h *HandlerFunc) RemoveEquipment(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, err.Error())
 		}
 
-		logData := utils.NewCommon(constant.Equipment, constant.ActionDelete, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.Equipment, constant.ActionDelete, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 
@@ -650,8 +650,8 @@ func (h *HandlerFunc) UpdateAssignment(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, err.Error())
 		}
 
-		logData := utils.NewCommon(constant.Equipment, constant.ActionUpdate, empID)
-		if err := common.AddLog(logData, tx); err != nil {
+		logData := models.NewCommon(constant.Equipment, constant.ActionUpdate, empID)
+		if err := h.Query.AddLog(logData, tx); err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create log: "+err.Error())
 		}
 

@@ -1,14 +1,16 @@
 package controllers
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/access_role"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/common"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
 )
 
 // CreateDesignation - POST /api/designations
@@ -19,6 +21,12 @@ func (h *HandlerFunc) CreateDesignation(c *gin.Context) {
 
 	if err := access_role.Admin_SuperAdmin_Hr(role, "only ADMIN, SUPERADMIN, and HR can create designations"); err != nil {
 		utils.RespondWithError(c, http.StatusForbidden, err.Error())
+		return
+	}
+
+	empId, err := common.GetEmployeeId(c)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusForbidden, "Access Denied")
 		return
 	}
 
@@ -36,11 +44,18 @@ func (h *HandlerFunc) CreateDesignation(c *gin.Context) {
 	}
 
 	// 3️ Create designation
-	designationID, err := h.Query.CreateDesignation(input)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to create designation: "+err.Error())
-		return
-	}
+	var designationID string
+	common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
+		designationID, err = h.Query.CreateDesignation(tx, input)
+		if err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create designation: "+err.Error())
+		}
+		logData := models.NewCommon(constant.ComponentDesignation, constant.ActionCreate, empId)
+		if err := h.Query.AddLog(logData, tx); err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create  degisnation log: "+err.Error())
+		}
+		return nil
+	})
 
 	// 4️ Response
 	c.JSON(http.StatusCreated, gin.H{
@@ -101,6 +116,12 @@ func (h *HandlerFunc) UpdateDesignation(c *gin.Context) {
 		return
 	}
 
+	empId, err := common.GetEmployeeId(c)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusForbidden, "Access Denied")
+		return
+	}
+
 	// 2️ Parse designation ID
 	designationIDStr := c.Param("id")
 	designationID, err := uuid.Parse(designationIDStr)
@@ -122,12 +143,17 @@ func (h *HandlerFunc) UpdateDesignation(c *gin.Context) {
 	}
 
 	// 4️ Update designation
-	err = h.Query.UpdateDesignation(designationID, input)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to update designation: "+err.Error())
-		return
-	}
-
+	common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
+		err = h.Query.UpdateDesignation(tx, designationID, input)
+		if err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to update designation: "+err.Error())
+		}
+		logData := models.NewCommon(constant.ComponentDesignation, constant.ActionUpdate, empId)
+		if err := h.Query.AddLog(logData, tx); err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create  degisnation log: "+err.Error())
+		}
+		return nil
+	})
 	// 5️ Response
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "designation updated successfully",
@@ -145,9 +171,14 @@ func (h *HandlerFunc) DeleteDesignation(c *gin.Context) {
 		return
 	}
 
+	empId, err := common.GetEmployeeId(c)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusForbidden, "Access Denied")
+		return
+	}
+
 	// 2️ Parse designation ID
 	designationIDStr := c.Param("id")
-	fmt.Println(designationIDStr)
 	designationID, err := uuid.Parse(designationIDStr)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusBadRequest, "invalid designation ID "+err.Error())
@@ -155,11 +186,17 @@ func (h *HandlerFunc) DeleteDesignation(c *gin.Context) {
 	}
 
 	// 3️ Delete designation (will set employee designation_id to NULL due to ON DELETE SET NULL)
-	err = h.Query.DeleteDesignation(designationID)
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "failed to delete designation: "+err.Error())
-		return
-	}
+	common.ExecuteTransaction(c, h.Query.DB, func(tx *sqlx.Tx) error {
+		err = h.Query.DeleteDesignation(tx, designationID)
+		if err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to delete designation: "+err.Error())
+		}
+		logData := models.NewCommon(constant.ComponentDesignation, constant.ActionDelete, empId)
+		if err := h.Query.AddLog(logData, tx); err != nil {
+			return utils.CustomErr(c, http.StatusInternalServerError, "failed to create  degisnation log: "+err.Error())
+		}
+		return nil
+	})
 
 	// 4️ Response
 	c.JSON(http.StatusOK, gin.H{

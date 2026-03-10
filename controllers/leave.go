@@ -163,12 +163,12 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 		leaveID = id
 
 		// Log Entry
-		data := &utils.Common{
+		data := &models.Common{
 			Component:  constant.ComponentLeave,
 			Action:     constant.ActionCreate,
 			FromUserID: employeeID,
 		}
-		if err := common.AddLog(data, tx); err != nil {
+		if err := h.Query.AddLog(data, tx); err != nil {
 			return utils.CustomErr(c, 500, "Failed to create leave log: "+err.Error())
 		}
 
@@ -285,12 +285,12 @@ func (s *HandlerFunc) AdminAddLeavePolicy(c *gin.Context) {
 		leave = Leave
 
 		// Log Entry
-		data := &utils.Common{
+		data := &models.Common{
 			Component:  constant.ComponentLeaveType,
 			Action:     constant.ActionCreate,
 			FromUserID: employeeID,
 		}
-		if err := common.AddLog(data, tx); err != nil {
+		if err := s.Query.AddLog(data, tx); err != nil {
 			return utils.CustomErr(c, 500, "Failed to create leave log: "+err.Error())
 		}
 		return nil // IMPORTANT FIX
@@ -439,11 +439,12 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 			var approverName string
 			s.Query.DB.Get(&approverName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", approverID)
 
-			recipients, err := s.Query.GetAdminAndEmployeeEmail(leave.EmployeeID)
+			recipient, err := s.Query.GetAdminAndEmployeeEmail(leave.EmployeeID)
 			if err != nil {
 				fmt.Printf("Failed to get admin and employee emails for notification: %v\n", err)
 			}
-			recipients = append(recipients)
+			var recipients []string
+			recipients = append(recipients, recipient...)
 
 			tx.Commit()
 
@@ -491,11 +492,12 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 			var approverName string
 			s.Query.DB.Get(&approverName, "SELECT full_name FROM Tbl_Employee WHERE id=$1", approverID)
 
-			recipients, err := s.Query.GetAdminAndEmployeeEmail(leave.EmployeeID)
+			recipient, err := s.Query.GetAdminAndEmployeeEmail(leave.EmployeeID)
 			if err != nil {
 				fmt.Printf("Failed to get admin and employee emails for notification: %v\n", err)
 			}
-			recipients = append(recipients)
+			var recipients []string
+			recipients = append(recipients, recipient...)
 
 			tx.Commit()
 
@@ -1537,12 +1539,12 @@ func (h *HandlerFunc) UpdateLeavePolicy(c *gin.Context) {
 		}
 
 		// Log Entry
-		data := &utils.Common{
+		data := &models.Common{
 			Component:  constant.ComponentLeaveType,
 			Action:     constant.ActionUpdate,
 			FromUserID: employeeID,
 		}
-		if err := common.AddLog(data, tx); err != nil {
+		if err := h.Query.AddLog(data, tx); err != nil {
 			return utils.CustomErr(c, 500, "Failed to create leave log: "+err.Error())
 		}
 		return nil
@@ -1621,12 +1623,12 @@ func (h *HandlerFunc) DeleteLeavePolicy(c *gin.Context) {
 		}
 
 		// Log Entry
-		data := &utils.Common{
+		data := &models.Common{
 			Component:  constant.ComponentLeaveType,
 			Action:     constant.ActionDelete,
 			FromUserID: employeeID,
 		}
-		if err := common.AddLog(data, tx); err != nil {
+		if err := h.Query.AddLog(data, tx); err != nil {
 			return utils.CustomErr(c, 500, "Failed to create leave log: "+err.Error())
 		}
 		return nil

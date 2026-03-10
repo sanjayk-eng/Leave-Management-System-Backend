@@ -204,15 +204,6 @@ type CompanyField struct {
 	LogoPath             string `json:"logo_path"`
 }
 
-// ----------------- LOG -----------------
-type LogResponse struct {
-	ID        int       `json:"id" db:"id"`
-	UserName  string    `json:"user_name" db:"user_name"`
-	Action    string    `json:"action" db:"action"`
-	Component string    `json:"component" db:"component"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-}
-
 type Leave struct {
 	ID            uuid.UUID  `db:"id"`
 	EmployeeID    uuid.UUID  `db:"employee_id"`

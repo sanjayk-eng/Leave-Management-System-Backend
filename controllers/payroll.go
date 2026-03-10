@@ -23,7 +23,7 @@ type PayrollPreview struct {
 	Employee     string    `json:"employee"`
 	BasicSalary  float64   `json:"basic_salary"`
 	WorkingDays  int       `json:"working_days"`
-	PaidLeaves   float64   `json:paid_leaves"`
+	PaidLeaves   float64   `json:"paid_leaves"`
 	UnpaidLeaves float64   `json:"unpaid_leaves"`
 	Deductions   float64   `json:"deductions"`
 	NetSalary    float64   `json:"net_salary"`
@@ -497,7 +497,7 @@ func (h *HandlerFunc) GetPayslipPDF(c *gin.Context) {
 
 	// 1. FETCH BRANDING
 	var settings models.CompanySettings
-	_ = h.Query.DB.Get(&settings, `SELECT company_name, logo_path, primary_color FROM Tbl_Company_Settings LIMIT 1`)
+	err = h.Query.DB.Get(&settings, `SELECT company_name, logo_path, primary_color FROM Tbl_Company_Settings LIMIT 1`)
 
 	// If no settings found or name is the generic "Company", override it
 	if err != nil || settings.CompanyName == "" || strings.EqualFold(settings.CompanyName, "Company") {
@@ -892,7 +892,7 @@ func (h *HandlerFunc) GetFinalizedPayslips(c *gin.Context) {
 		Year            int       `json:"year"`
 		BasicSalary     float64   `json:"basic_salary"`
 		WorkingDays     int       `json:"working_days"`
-		PaidLeaves      float64   `json:paid_leaves"`
+		PaidLeaves      float64   `json:"paid_leaves"`
 		UnpaidLeaves    float64   `json:"unpaid_leaves"`
 		DeductionAmount float64   `json:"deduction_amount"`
 		NetSalary       float64   `json:"net_salary"`

@@ -77,9 +77,9 @@ func (h *HandlerFunc) UpdateCompanySettings(c *gin.Context) {
 			return utils.CustomErr(c, 500, "Failed to fetch settings: "+err.Error())
 		}
 		//add log
-		data := utils.NewCommon(constant.CompanySettings, constant.ActionCreate, empID)
+		data := models.NewCommon(constant.CompanySettings, constant.ActionCreate, empID)
 
-		err = common.AddLog(data, tx)
+		err = h.Query.AddLog(data, tx)
 		if err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
 		}
@@ -151,8 +151,8 @@ func (h *HandlerFunc) UpdateCompanySettings(c *gin.Context) {
 		}
 
 		// Add Audit Log
-		data := utils.NewCommon(constant.CompanySettings, constant.ActionUpdate, empID)
-		return common.AddLog(data, tx)
+		data := models.NewCommon(constant.CompanySettings, constant.ActionUpdate, empID)
+		return h.Query.AddLog(data, tx)
 	})
 
 	if err != nil {

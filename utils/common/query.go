@@ -2,16 +2,13 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
 )
-
-func AddLog(data *utils.Common, q *sqlx.Tx) error {
-	_, err := q.Exec("INSERT INTO tbl_log (from_user_id, action, component) VALUES ($1, $2, $3)", data.FromUserID, data.Action, data.Component)
-	return err
-}
 
 func ExecuteTransaction(ctx context.Context, db *sqlx.DB, fn func(tx *sqlx.Tx) error) error {
 	tx, err := db.BeginTxx(ctx, nil)
@@ -40,4 +37,23 @@ func ExecuteTransaction(ctx context.Context, db *sqlx.DB, fn func(tx *sqlx.Tx) e
 
 	err = fn(tx)
 	return err
+}
+
+func GetEmployeeId(c *gin.Context) (uuid.UUID, error) {
+	empIDRaw, ok := c.Get("user_id")
+	if !ok {
+		return uuid.Nil, errors.New("employee ID missing")
+	}
+
+	empIDStr, ok := empIDRaw.(string)
+	if !ok {
+		return uuid.Nil, errors.New("invalid employee ID format")
+	}
+
+	empID, err := uuid.Parse(empIDStr)
+	if err != nil {
+		return uuid.Nil, errors.New("invalid employee UUID")
+	}
+
+	return empID, nil
 }

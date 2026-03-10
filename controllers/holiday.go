@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/models"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/common"
 	"github.com/sanjayk-eng/UserMenagmentSystem_Backend/utils/constant"
@@ -67,9 +68,9 @@ func (s *HandlerFunc) AddHoliday(c *gin.Context) {
 			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to add holiday: "+err.Error())
 		}
 		holidayId = id
-		data := utils.NewCommon(constant.ComponentHoliday, constant.ActionCreate, empID)
+		data := models.NewCommon(constant.ComponentHoliday, constant.ActionCreate, empID)
 
-		err = common.AddLog(data, tx)
+		err = s.Query.AddLog(data, tx)
 		if err != nil {
 			// utils.RespondWithError(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
 			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
@@ -145,9 +146,9 @@ func (s *HandlerFunc) DeleteHoliday(c *gin.Context) {
 		if err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "Invalid employee UUID")
 		}
-		data := utils.NewCommon(constant.ComponentHoliday, constant.ActionDelete, empID)
+		data := models.NewCommon(constant.ComponentHoliday, constant.ActionDelete, empID)
 
-		err = common.AddLog(data, tx)
+		err = s.Query.AddLog(data, tx)
 		if err != nil {
 			return utils.CustomErr(c, http.StatusInternalServerError, "Failed to log action: "+err.Error())
 		}
