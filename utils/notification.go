@@ -696,3 +696,161 @@ Zenithive Payroll Management System
 
 	return SendEmail(employeeEmail, subject, body)
 }
+
+// ==================== HR-SPECIFIC EMAIL FUNCTIONS ====================
+
+// SendLeaveApplicationEmailToHR sends HR-specific notification for new leave applications
+func SendLeaveApplicationEmailToHR(hrEmails []string, employeeName, employeeEmail, leaveType, startDate, endDate string, days float64, reason string) error {
+	subject := fmt.Sprintf("[HR ALERT] Leave Application - %s", employeeName)
+	body := fmt.Sprintf(`
+HR DEPARTMENT NOTIFICATION
+
+A new leave application requires HR review and processing.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EMPLOYEE INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Employee Name: %s
+Employee Email: %s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LEAVE DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Reason: %s
+Status: Pending Approval
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ACTION REQUIRED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Please login to the HR portal to review and process this leave application.
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, employeeEmail, leaveType, startDate, endDate, days, reason)
+
+	return SendEmailToMultiple(hrEmails, subject, body)
+}
+
+// SendLeaveApprovalEmailToHR sends HR-specific notification when leave is approved
+func SendLeaveApprovalEmailToHR(hrEmails []string, employeeName, employeeEmail, leaveType, startDate, endDate string, days float64, approvedBy string) error {
+	subject := fmt.Sprintf("[HR RECORD] Leave Approved - %s", employeeName)
+	body := fmt.Sprintf(`
+HR DEPARTMENT RECORD
+
+A leave request has been APPROVED and processed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EMPLOYEE INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Employee Name: %s
+Employee Email: %s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LEAVE DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Approved By: %s
+Status: APPROVED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROCESSING STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Leave balance has been deducted
+✓ Employee has been notified
+✓ Record has been updated in the system
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, employeeEmail, leaveType, startDate, endDate, days, approvedBy)
+
+	return SendEmailToMultiple(hrEmails, subject, body)
+}
+
+// SendLeaveRejectionEmailToHR sends HR-specific notification when leave is rejected
+func SendLeaveRejectionEmailToHR(hrEmails []string, employeeName, employeeEmail, leaveType, startDate, endDate string, days float64, rejectedBy string) error {
+	subject := fmt.Sprintf("[HR RECORD] Leave Rejected - %s", employeeName)
+	body := fmt.Sprintf(`
+HR DEPARTMENT RECORD
+
+A leave request has been REJECTED.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EMPLOYEE INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Employee Name: %s
+Employee Email: %s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LEAVE DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Rejected By: %s
+Status: REJECTED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROCESSING STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Leave balance remains unchanged
+✓ Employee has been notified
+✓ Record has been updated in the system
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, employeeEmail, leaveType, startDate, endDate, days, rejectedBy)
+
+	return SendEmailToMultiple(hrEmails, subject, body)
+}
+
+// SendLeaveWithdrawalEmailToHR sends HR-specific notification when leave is withdrawn
+func SendLeaveWithdrawalEmailToHR(hrEmails []string, employeeName, employeeEmail, leaveType, startDate, endDate string, days float64, withdrawnBy, withdrawnByRole, reason string) error {
+	subject := fmt.Sprintf("[HR RECORD] Leave Withdrawn - %s", employeeName)
+	
+	reasonText := ""
+	if reason != "" {
+		reasonText = fmt.Sprintf("\nWithdrawal Reason: %s", reason)
+	}
+
+	body := fmt.Sprintf(`
+HR DEPARTMENT RECORD
+
+An approved leave request has been WITHDRAWN.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EMPLOYEE INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Employee Name: %s
+Employee Email: %s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LEAVE DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Leave Type: %s
+Start Date: %s
+End Date: %s
+Duration: %.1f days
+Withdrawn By: %s (%s)
+Status: WITHDRAWN%s
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROCESSING STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Leave balance has been restored (%.1f days credited back)
+✓ Employee has been notified
+✓ Record has been updated in the system
+
+Best regards,
+Zenithive Leave Management System
+`, employeeName, employeeEmail, leaveType, startDate, endDate, days, withdrawnBy, withdrawnByRole, reasonText, days)
+
+	return SendEmailToMultiple(hrEmails, subject, body)
+}

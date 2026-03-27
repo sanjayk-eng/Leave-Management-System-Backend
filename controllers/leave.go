@@ -207,6 +207,27 @@ func (h *HandlerFunc) ApplyLeave(c *gin.Context) {
 				Days,
 				input.Reason,
 			)
+			
+			// Send HR-specific email
+			var hrEmails []string
+			h.Query.DB.Select(&hrEmails, `
+				SELECT e.email 
+				FROM Tbl_Employee e
+				JOIN Tbl_Role r ON e.role_id = r.id
+				WHERE r.type = 'HR' AND e.status = 'active'
+			`)
+			if len(hrEmails) > 0 {
+				utils.SendLeaveApplicationEmailToHR(
+					hrEmails,
+					empDetails.FullName,
+					empDetails.Email,
+					leaveType.Name,
+					input.StartDate.Format("2006-01-02"),
+					input.EndDate.Format("2006-01-02"),
+					Days,
+					input.Reason,
+				)
+			}
 		}
 	}()
 
@@ -461,6 +482,27 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 						leave.Days,
 						approverName,
 					)
+					
+					// Send HR-specific email
+					var hrEmails []string
+					s.Query.DB.Select(&hrEmails, `
+						SELECT e.email 
+						FROM Tbl_Employee e
+						JOIN Tbl_Role r ON e.role_id = r.id
+						WHERE r.type = 'HR' AND e.status = 'active'
+					`)
+					if len(hrEmails) > 0 {
+						utils.SendLeaveRejectionEmailToHR(
+							hrEmails,
+							empDetails.FullName,
+							empDetails.Email,
+							leaveTypeName,
+							leave.StartDate.Format("2006-01-02"),
+							leave.EndDate.Format("2006-01-02"),
+							leave.Days,
+							approverName,
+						)
+					}
 				}()
 			}
 
@@ -514,6 +556,27 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 						leave.Days,
 						approverName,
 					)
+					
+					// Send HR-specific email
+					var hrEmails []string
+					s.Query.DB.Select(&hrEmails, `
+						SELECT e.email 
+						FROM Tbl_Employee e
+						JOIN Tbl_Role r ON e.role_id = r.id
+						WHERE r.type = 'HR' AND e.status = 'active'
+					`)
+					if len(hrEmails) > 0 {
+						utils.SendLeaveRejectionEmailToHR(
+							hrEmails,
+							empDetails.FullName,
+							empDetails.Email,
+							leaveTypeName,
+							leave.StartDate.Format("2006-01-02"),
+							leave.EndDate.Format("2006-01-02"),
+							leave.Days,
+							approverName,
+						)
+					}
 				}()
 			}
 
@@ -592,6 +655,27 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 					leave.Days,
 					approverName,
 				)
+				
+				// Send HR-specific email
+				var hrEmails []string
+				s.Query.DB.Select(&hrEmails, `
+					SELECT e.email 
+					FROM Tbl_Employee e
+					JOIN Tbl_Role r ON e.role_id = r.id
+					WHERE r.type = 'HR' AND e.status = 'active'
+				`)
+				if len(hrEmails) > 0 {
+					utils.SendLeaveApprovalEmailToHR(
+						hrEmails,
+						empDetails.FullName,
+						empDetails.Email,
+						leaveTypeName,
+						leave.StartDate.Format("2006-01-02"),
+						leave.EndDate.Format("2006-01-02"),
+						leave.Days,
+						approverName,
+					)
+				}
 			}()
 		}
 
@@ -652,6 +736,27 @@ func (s *HandlerFunc) ActionLeave(c *gin.Context) {
 					leave.Days,
 					approverName,
 				)
+				
+				// Send HR-specific email
+				var hrEmails []string
+				s.Query.DB.Select(&hrEmails, `
+					SELECT e.email 
+					FROM Tbl_Employee e
+					JOIN Tbl_Role r ON e.role_id = r.id
+					WHERE r.type = 'HR' AND e.status = 'active'
+				`)
+				if len(hrEmails) > 0 {
+					utils.SendLeaveApprovalEmailToHR(
+						hrEmails,
+						empDetails.FullName,
+						empDetails.Email,
+						leaveTypeName,
+						leave.StartDate.Format("2006-01-02"),
+						leave.EndDate.Format("2006-01-02"),
+						leave.Days,
+						approverName,
+					)
+				}
 			}()
 		}
 
@@ -1133,6 +1238,29 @@ func (h *HandlerFunc) WithdrawLeave(c *gin.Context) {
 				} else {
 					fmt.Printf(" Withdrawal email sent successfully to %s\n", email)
 				}
+				
+				// Send HR-specific email
+				var hrEmails []string
+				h.Query.DB.Select(&hrEmails, `
+					SELECT e.email 
+					FROM Tbl_Employee e
+					JOIN Tbl_Role r ON e.role_id = r.id
+					WHERE r.type = 'HR' AND e.status = 'active'
+				`)
+				if len(hrEmails) > 0 {
+					utils.SendLeaveWithdrawalEmailToHR(
+						hrEmails,
+						name,
+						email,
+						leaveType,
+						startDate,
+						endDate,
+						days,
+						withdrawnBy,
+						withdrawnRole,
+						reason,
+					)
+				}
 			}(empDetails.Email, empDetails.FullName, leaveTypeName,
 				leave.StartDate.Format("2006-01-02"),
 				leave.EndDate.Format("2006-01-02"),
@@ -1213,7 +1341,7 @@ func (h *HandlerFunc) GetManagerLeaveHistory(c *gin.Context) {
 	err = h.Query.DB.Select(&result, query, currentUserID)
 	if err != nil {
 		// Log the error for debugging
-		fmt.Printf("❌ GetManagerLeaveHistory DB Error: %v\n", err)
+		fmt.Printf(" GetManagerLeaveHistory DB Error: %v\n", err)
 		fmt.Printf("Manager ID: %s\n", currentUserID)
 
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to fetch team leave history: "+err.Error())

@@ -34,6 +34,11 @@ func (s *HandlerFunc) AddHoliday(c *gin.Context) {
 		return
 	}
 
+	if err := s.Validator.Struct(input); err != nil {
+		utils.RespondWithError(c, http.StatusBadRequest, "invalid input: "+err.Error())
+		return
+	}
+
 	// Normalize date to UTC midnight to avoid timezone issues
 	normalizedDate := time.Date(input.Date.Year(), input.Date.Month(), input.Date.Day(), 0, 0, 0, 0, time.UTC)
 	var holidayId string

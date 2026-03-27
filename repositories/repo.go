@@ -65,7 +65,7 @@ func (r *Repository) GetAdminAndEmployeeEmail(id uuid.UUID) ([]string, error) {
 			SELECT e.email 
 			FROM Tbl_Employee e
 			JOIN Tbl_Role r ON e.role_id = r.id
-			WHERE r.type IN ('ADMIN', 'SUPERADMIN') AND e.status = 'active'
+			WHERE r.type IN ('ADMIN', 'SUPERADMIN', 'HR') AND e.status = 'active'
 		`)
 	recipients = append(recipients, adminEmails...)
 
